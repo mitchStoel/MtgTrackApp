@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>EDH Nebula Pod Tracker</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card: rgba(20, 27, 45, 0.88);
+      --card-alt: #1e294b;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.25);
+      --success: #22c55e;
+      --danger: #ef4444;
+      --border: rgba(56, 189, 248, 0.18);
+    }
+
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+      margin: 0;
+      background-color: var(--bg);
+      background-image: 
+        radial-gradient(circle at 15% 20%, rgba(14, 116, 144, 0.25) 0%, transparent 40%),
+        radial-gradient(circle at 85% 80%, rgba(109, 40, 217, 0.2) 0%, transparent 40%),
+        radial-gradient(circle at 50% 50%, rgba(2, 132, 199, 0.12) 0%, transparent 60%);
+      background-attachment: fixed;
+      color: var(--text);
+      padding-bottom: 80px;
+    }
+
+    header {
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(10px);
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    header h1 { margin: 0; font-size: 1.15rem; letter-spacing: 0.8px; text-shadow: 0 0 10px rgba(56, 189, 248, 0.4); }
+
+    .container { max-width: 680px; margin: 0 auto; padding: 16px; }
+
+    .card {
+      background: var(--card);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    }
+    .card h2 { margin-top: 0; font-size: 1.05rem; margin-bottom: 12px; color: #7dd3fc; text-shadow: 0 0 8px rgba(125, 211, 252, 0.3); }
+
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 5px; margin-top: 10px; }
+    input, select {
+      width: 100%;
+      padding: 11px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(15, 23, 42, 0.7);
+      color: var(--text);
+      font-size: 1rem;
+      color-scheme: dark;
+    }
+    input:focus, select:focus { outline: 2px solid var(--accent); border-color: transparent; box-shadow: 0 0 10px var(--accent-glow); }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #0284c7, #38bdf8);
+      color: #090d16;
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 14px;
+      box-shadow: 0 4px 14px rgba(56, 189, 248, 0.3);
+      transition: all 0.2s ease;
+    }
+    button:active { transform: scale(0.98); opacity: 0.85; }
+    button.secondary { background: var(--card-alt); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
+    button.small { width: auto; padding: 6px 10px; font-size: 0.8rem; margin-top: 0; }
+    button.danger { background: linear-gradient(135deg, #dc2626, #ef4444); color: white; box-shadow: 0 4px 14px rgba(239, 68, 68, 0.3); }
+
+    /* Login Overlay */
+    #loginOverlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(9, 13, 22, 0.95);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    #loginCard {
+      width: 100%;
+      max-width: 380px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 0 40px rgba(56, 189, 248, 0.15);
+    }
+
+    /* Bottom Navigation */
+    nav.bottom-nav {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(10px);
+      border-top: 1px solid var(--border);
+      display: flex;
+      z-index: 30;
+      box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+    }
+    nav.bottom-nav button {
+      flex: 1;
+      margin: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 14px 4px;
+      font-size: 0.85rem;
+      border-top: 3px solid transparent;
+      box-shadow: none;
+    }
+    nav.bottom-nav button.active {
+      color: var(--accent);
+      border-top-color: var(--accent);
+      background: rgba(56, 189, 248, 0.1);
+      text-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    .sub-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .sub-tabs button { margin-top: 0; background: var(--card-alt); color: var(--text); padding: 9px; font-size: 0.9rem; border: 1px solid var(--border); box-shadow: none; }
+    .sub-tabs button.active { background: linear-gradient(135deg, #0284c7, #38bdf8); color: #090d16; font-weight: 700; }
+
+    .seat-box {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .seat-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .seat-badge {
+      background: var(--card-alt);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #cbd5e1;
+    }
+    .winner-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .winner-toggle input { width: 18px; height: 18px; margin: 0; accent-color: var(--success); }
+    .seat-box.is-winner { border-color: var(--success); background: rgba(34, 197, 94, 0.12); box-shadow: 0 0 15px rgba(34, 197, 94, 0.2); }
+    .seat-box.is-winner .winner-toggle { color: var(--success); }
+
+    .pip {
+      display: inline-block;
+      width: 20px; height: 20px;
+      line-height: 20px;
+      text-align: center;
+      border-radius: 50%;
+      font-size: 0.72rem;
+      font-weight: 800;
+      margin-right: 2px;
+      color: #111;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    }
+    .pip-W { background: #f8f6d8; }
+    .pip-U { background: #60a5fa; }
+    .pip-B { background: #94a3b8; color: #fff; }
+    .pip-R { background: #f87171; }
+    .pip-G { background: #4ade80; }
+    .pip-C { background: #cbd5e1; }
+
+    .mana-helper { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+    .mana-helper button.pip-btn {
+      width: 34px; height: 34px; margin: 0; padding: 0; border-radius: 50%;
+      font-size: 0.9rem; font-weight: 800; display: inline-flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.2);
+    }
+    .mana-helper button.pip-btn.pip-W { background: #f8f6d8; color: #111; }
+    .mana-helper button.pip-btn.pip-U { background: #60a5fa; color: #111; }
+    .mana-helper button.pip-btn.pip-B { background: #94a3b8; color: #fff; }
+    .mana-helper button.pip-btn.pip-R { background: #f87171; color: #111; }
+    .mana-helper button.pip-btn.pip-G { background: #4ade80; color: #111; }
+    .mana-helper button.pip-btn.pip-C { background: #cbd5e1; color: #111; }
+    .mana-helper button.clear-btn {
+      width: auto; margin: 0 0 0 auto; padding: 6px 12px; font-size: 0.82rem; background: var(--card-alt); color: var(--text); border: 1px solid var(--border); box-shadow: none;
+    }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px; }
+    .kpi-box { background: rgba(15, 23, 42, 0.6); padding: 12px; border-radius: 10px; text-align: center; border: 1px solid var(--border); }
+    .kpi-val { font-size: 1.5rem; font-weight: 800; color: var(--accent); text-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
+    .kpi-lbl { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    th, td { text-align: left; padding: 9px 6px; border-bottom: 1px solid rgba(56, 189, 248, 0.1); }
+    th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
+    tr:last-child td { border-bottom: none; }
+
+    .bar-wrap { background: rgba(15, 23, 42, 0.6); border-radius: 6px; height: 10px; overflow: hidden; margin-top: 4px; border: 1px solid var(--border); }
+    .bar-fill { height: 100%; background: linear-gradient(90deg, #0284c7, #38bdf8); box-shadow: 0 0 8px rgba(56, 189, 248, 0.5); }
+
+    .toast {
+      position: fixed;
+      top: 66px; left: 50%; transform: translateX(-50%);
+      background: #22c55e; color: #052e16;
+      padding: 10px 18px; border-radius: 8px; font-weight: 700;
+      display: none; z-index: 50; box-shadow: 0 4px 20px rgba(34, 197, 94, 0.4);
+    }
+    .toast.error { background: #ef4444; color: white; box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4); }
+
+    .wincon-tag {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border);
+      padding: 6px 10px; border-radius: 8px; margin: 4px 4px 0 0; font-size: 0.85rem;
+    }
+    .wincon-tag span.del { color: var(--danger); cursor: pointer; font-weight: bold; padding-left: 4px; }
+  </style>
+</head>
+<body>
+
+<div id="loginOverlay" style="display:none;">
+  <div id="loginCard">
+    <h2 style="color:var(--accent); margin-bottom:8px;">🌌 EDH Nebula Tracker</h2>
+    <p style="font-size:0.85rem; color:var(--muted); margin-bottom:16px;">Voer het pod-wachtwoord in om toegang te krijgen.</p>
+    <form onsubmit="handleLogin(event)">
+      <input type="password" id="loginPasswordInput" placeholder="Wachtwoord..." required style="margin-bottom:12px;" />
+      <button type="submit">Inloggen</button>
+    </form>
+    <div id="loginError" style="color:var(--danger); font-size:0.85rem; margin-top:10px; display:none;"></div>
+  </div>
+</div>
+
+<header>
+  <h1>🌌 EDH Nebula Tracker</h1>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <span style="font-size:0.78rem; color:var(--muted);" id="headerGameCount">0 Games</span>
+    <button type="button" class="small secondary" onclick="switchTab('settings')" style="margin-top:0;">⚙️ Instellingen</button>
+  </div>
+</header>
+
+<div id="toast" class="toast">Saved!</div>
+
+<div class="container">
+
+  <!-- TAB 1: LOG GAME -->
+  <div id="tab-log" class="tab-content active">
+    <div class="card" id="gameFormCard">
+      <h2 id="gameFormTitle">Log Completed Game</h2>
+      <input type="hidden" id="editGameId" value="" />
+
+      <div style="display:flex; gap:10px;">
+        <div style="flex:1;">
+          <label>Pod Size</label>
+          <select id="podSize" onchange="renderSeatInputs()">
+            <option value="4" selected>4 Players</option>
+            <option value="3">3 Players</option>
+          </select>
+        </div>
+        <div style="flex:1;">
+          <label>Total Turns</label>
+          <input type="number" id="gameTurns" min="1" max="99" placeholder="e.g. 9" />
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <div style="flex:1;">
+          <label>Date Played</label>
+          <input type="date" id="gameDate" />
+        </div>
+        <div style="flex:1;">
+          <label>How was the game won?</label>
+          <select id="gameWincon"></select>
+        </div>
+      </div>
+
+      <label style="margin-top:14px;">Seat Order, Commanders & Winner</label>
+      <div id="seatsContainer"></div>
+
+      <div style="display:flex; gap:8px;">
+        <button id="saveGameBtn" onclick="submitGame()">Save Game Result</button>
+        <button id="cancelGameEditBtn" type="button" class="secondary" style="display:none;" onclick="cancelEditGame()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 2: DECKS -->
+  <div id="tab-decks" class="tab-content">
+    <div class="card" id="deckFormCard">
+      <h2 id="deckFormTitle">Register Commander / Deck</h2>
+      <input type="hidden" id="editDeckId" value="" />
+
+      <label>Owner Name</label>
+      <input type="text" id="deckOwner" list="ownerSuggestions" placeholder="e.g. Alex" />
+      <datalist id="ownerSuggestions"></datalist>
+
+      <label>Commander Name</label>
+      <input type="text" id="deckCmd1" placeholder="e.g. Atraxa, Praetors' Voice" />
+
+      <label>Partner / Background (Optional)</label>
+      <input type="text" id="deckCmd2" placeholder="Leave blank if single commander" />
+
+      <label>Combined Mana Cost (for Color Identity)</label>
+      <input type="text" id="deckMana" placeholder="e.g. GWUB or {2}{R}{G}" />
+      <div class="mana-helper">
+        <button type="button" class="pip-btn pip-W" title="White" onclick="appendMana('W')">W</button>
+        <button type="button" class="pip-btn pip-U" title="Blue" onclick="appendMana('U')">U</button>
+        <button type="button" class="pip-btn pip-B" title="Black" onclick="appendMana('B')">B</button>
+        <button type="button" class="pip-btn pip-R" title="Red" onclick="appendMana('R')">R</button>
+        <button type="button" class="pip-btn pip-G" title="Green" onclick="appendMana('G')">G</button>
+        <button type="button" class="pip-btn pip-C" title="Colorless" onclick="appendMana('C')">C</button>
+        <button type="button" class="clear-btn" onclick="document.getElementById('deckMana').value=''">Clear</button>
+      </div>
+
+      <div style="display:flex; gap:8px;">
+        <button id="saveDeckBtn" onclick="submitCommander()">Register Deck</button>
+        <button id="cancelEditBtn" type="button" class="secondary" style="display:none;" onclick="cancelEditCommander()">Cancel</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Manage Win Conditions</h2>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="newWinconName" placeholder="Add new win condition..." />
+        <button type="button" class="small" onclick="addWincon()">Add</button>
+      </div>
+      <div id="winconList" style="margin-top:10px;"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h2 style="margin:0;">Registered Decks (<span id="deckCount">0</span>)</h2>
+        <select id="deckOwnerFilter" style="width:auto; max-width:160px; padding:6px 10px; font-size:0.85rem;" onchange="renderDecksTable()">
+          <option value="">All Owners</option>
+        </select>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Commander(s)</th>
+            <th>Owner</th>
+            <th>Colors</th>
+            <th style="text-align:right;">Edit</th>
+          </tr>
+        </thead>
+        <tbody id="registeredDecksTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TAB 3: STATS / DASHBOARD -->
+  <div id="tab-stats" class="tab-content">
+    <div class="card" style="padding:12px 16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
+        <span style="font-size:0.88rem; color:var(--muted); font-weight:600;">Time Period:</span>
+        <select id="timePeriodFilter" style="width:auto; flex:1; max-width:210px; padding:8px 10px; font-size:0.9rem;" onchange="loadStats()">
+          <option value="all" selected>All Time</option>
+          <option value="30d">Last 30 Days</option>
+          <option value="90d">Last 90 Days</option>
+          <option value="year">This Year</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="sub-tabs">
+      <button id="subBtnTotal" class="active" onclick="switchStatsView('total')">Pod Totals</button>
+      <button id="subBtnPlayer" onclick="switchStatsView('player')">Player Profiles</button>
+    </div>
+
+    <!-- TOTAL VIEW -->
+    <div id="stats-total">
+      <div class="kpi-grid">
+        <div class="kpi-box">
+          <div class="kpi-val" id="kpiTotalGames">0</div>
+          <div class="kpi-lbl">Games Played</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-val" id="kpiAvgTurns">0</div>
+          <div class="kpi-lbl">Avg. Turns / Game</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Player Leaderboard</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Games</th>
+              <th>Wins</th>
+              <th>Winrate</th>
+            </tr>
+          </thead>
+          <tbody id="playerLeaderboardBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Top 5 Most Played Commanders</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Commander</th>
+              <th>Owner</th>
+              <th>Played</th>
+              <th>Wins</th>
+            </tr>
+          </thead>
+          <tbody id="topPlayedBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h2 style="margin:0;">Top 5 Highest Winrate</h2>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="font-size:0.8rem; color:var(--muted);">Min Games:</span>
+            <input type="number" id="minGamesFilter" value="2" min="1" max="50"
+                   style="width:60px; padding:5px 8px; font-size:0.9rem;"
+                   onchange="loadStats()" />
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Commander</th>
+              <th>Record</th>
+              <th>Winrate</th>
+            </tr>
+          </thead>
+          <tbody id="topWinrateBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Seat Order Winrate</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Seat</th>
+              <th>Games</th>
+              <th>Wins</th>
+              <th>Winrate</th>
+            </tr>
+          </thead>
+          <tbody id="seatStatsBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>How Games End</h2>
+        <div id="winconBreakdown"></div>
+      </div>
+
+      <div class="card">
+        <h2>Recent Games</h2>
+        <div id="recentGamesList"></div>
+      </div>
+    </div>
+
+    <!-- PER-PLAYER VIEW (Met Filter & Sorting op Played, Wins, Winrate) -->
+    <div id="stats-player" style="display:none;">
+      <div class="card">
+        <label style="margin-top:0;">Select Player</label>
+        <select id="playerProfileSelect" onchange="renderPlayerProfile()"></select>
+      </div>
+
+      <div id="playerProfileContent"></div>
+    </div>
+  </div>
+
+  <!-- TAB 4: SETTINGS -->
+  <div id="tab-settings" class="tab-content">
+    <div class="card">
+      <h2>Wachtwoord Wijzigen</h2>
+      <label>Huidig Wachtwoord</label>
+      <input type="password" id="currentPassword" placeholder="Huidig wachtwoord" />
+
+      <label>Nieuw Wachtwoord</label>
+      <input type="password" id="newPassword" placeholder="Nieuw wachtwoord" />
+
+      <button onclick="changePassword()">Wachtwoord Opslaan</button>
+    </div>
+
+    <div class="card" style="text-align:center;">
+      <button class="secondary" onclick="handleLogout()">Uitloggen</button>
+    </div>
+  </div>
+
+</div>
+
+<nav class="bottom-nav">
+  <button id="nav-log" class="active" onclick="switchTab('log')">🎲 Log Game</button>
+  <button id="nav-decks" onclick="switchTab('decks')">🃏 Decks</button>
+  <button id="nav-stats" onclick="switchTab('stats')">📊 Stats</button>
+</nav>
+
+<script>
+  let commanders = [];
+  let winConditions = [];
+  let statsData = null;
+
+  // Filter & sorting state for player profile decks table
+  let playerDeckSearch = "";
+  let playerDeckSortBy = "games_played"; // 'games_played', 'wins', 'winrate', 'name'
+  let playerDeckSortDir = "desc";        // 'asc', 'desc'
+
+  function setTodayDate() {
+    const today = new Date().toISOString().split("T")[0];
+    document.getElementById("gameDate").value = today;
+  }
+
+  function showToast(msg, isError = false) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.className = isError ? "toast error" : "toast";
+    t.style.display = "block";
+    setTimeout(() => { t.style.display = "none"; }, 2600);
+  }
+
+  function renderPips(colors) {
+    return colors.map(c => `<span class="pip pip-${c}">${c}</span>`).join("");
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
+    document.querySelectorAll("nav.bottom-nav button").forEach(el => el.classList.remove("active"));
+    
+    document.getElementById(`tab-${tab}`).classList.add("active");
+    const navBtn = document.getElementById(`nav-${tab}`);
+    if (navBtn) navBtn.classList.add("active");
+
+    if (tab === "stats") loadStats();
+    if (tab === "decks") loadCommanders();
+  }
+
+  function switchStatsView(view) {
+    document.getElementById("subBtnTotal").classList.toggle("active", view === "total");
+    document.getElementById("subBtnPlayer").classList.toggle("active", view === "player");
+    document.getElementById("stats-total").style.display = view === "total" ? "block" : "none";
+    document.getElementById("stats-player").style.display = view === "player" ? "block" : "none";
+  }
+
+  function appendMana(letter) {
+    const inp = document.getElementById("deckMana");
+    inp.value = inp.value + letter;
+  }
+
+  async function checkAuth() {
+    const res = await fetch("/api/auth/status");
+    const data = await res.json();
+    if (!data.logged_in) {
+      document.getElementById("loginOverlay").style.display = "flex";
+    } else {
+      document.getElementById("loginOverlay").style.display = "none";
+    }
+  }
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    const password = document.getElementById("loginPasswordInput").value;
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password })
+    });
+
+    if (res.ok) {
+      document.getElementById("loginOverlay").style.display = "none";
+      document.getElementById("loginPasswordInput").value = "";
+      document.getElementById("loginError").style.display = "none";
+      loadWinConditions();
+      loadCommanders();
+      loadStats();
+    } else {
+      const err = await res.json();
+      const errDiv = document.getElementById("loginError");
+      errDiv.textContent = err.error || "Onjuist wachtwoord";
+      errDiv.style.display = "block";
+    }
+  }
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    location.reload();
+  }
+
+  async function changePassword() {
+    const current_password = document.getElementById("currentPassword").value;
+    const new_password = document.getElementById("newPassword").value;
+
+    const res = await fetch("/api/auth/change_password", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ current_password, new_password })
+    });
+
+    if (res.ok) {
+      document.getElementById("currentPassword").value = "";
+      document.getElementById("newPassword").value = "";
+      showToast("Wachtwoord succesvol gewijzigd!");
+    } else {
+      const err = await res.json();
+      showToast(err.error || "Fout bij wijzigen wachtwoord", true);
+    }
+  }
+
+  async function loadCommanders() {
+    const res = await fetch("/api/commanders");
+    commanders = await res.json();
+
+    const owners = [...new Set(commanders.map(c => c.owner))];
+    document.getElementById("ownerSuggestions").innerHTML = owners.map(o => `<option value="${o}">`).join("");
+
+    const filterSelect = document.getElementById("deckOwnerFilter");
+    const currentFilter = filterSelect.value;
+    filterSelect.innerHTML = `<option value="">All Owners</option>` + owners.map(o => `<option value="${o}">${o}</option>`).join("");
+    if (owners.includes(currentFilter)) filterSelect.value = currentFilter;
+
+    renderDecksTable();
+    if (!document.getElementById("editGameId").value) {
+      renderSeatInputs();
+    }
+  }
+
+  function renderDecksTable() {
+    const selectedOwner = document.getElementById("deckOwnerFilter").value;
+    const filtered = selectedOwner ? commanders.filter(c => c.owner === selectedOwner) : commanders;
+
+    document.getElementById("deckCount").textContent = filtered.length;
+    document.getElementById("registeredDecksTable").innerHTML = filtered.map(c => {
+      const name = c.commander_2 ? `${c.commander_1} & ${c.commander_2}` : c.commander_1;
+      return `<tr>
+        <td><strong>${name}</strong></td>
+        <td>${c.owner}</td>
+        <td>${renderPips(c.colors)}</td>
+        <td style="text-align:right;">
+          <button type="button" class="small secondary" onclick="startEditCommander(${c.id})">Edit</button>
+        </td>
+      </tr>`;
+    }).join("") || `<tr><td colspan="4" style="color:var(--muted);">No decks found.</td></tr>`;
+  }
+
+  function startEditCommander(id) {
+    const deck = commanders.find(c => c.id === id);
+    if (!deck) return;
+
+    document.getElementById("editDeckId").value = deck.id;
+    document.getElementById("deckOwner").value = deck.owner;
+    document.getElementById("deckCmd1").value = deck.commander_1;
+    document.getElementById("deckCmd2").value = deck.commander_2 || "";
+    document.getElementById("deckMana").value = deck.mana_cost;
+
+    document.getElementById("deckFormTitle").textContent = "Edit Commander / Deck";
+    document.getElementById("saveDeckBtn").textContent = "Save Changes";
+    document.getElementById("cancelEditBtn").style.display = "block";
+
+    document.getElementById("deckFormCard").scrollIntoView({ behavior: "smooth" });
+  }
+
+  function cancelEditCommander() {
+    document.getElementById("editDeckId").value = "";
+    document.getElementById("deckOwner").value = "";
+    document.getElementById("deckCmd1").value = "";
+    document.getElementById("deckCmd2").value = "";
+    document.getElementById("deckMana").value = "";
+
+    document.getElementById("deckFormTitle").textContent = "Register Commander / Deck";
+    document.getElementById("saveDeckBtn").textContent = "Register Deck";
+    document.getElementById("cancelEditBtn").style.display = "none";
+  }
+
+  async function loadWinConditions() {
+    const res = await fetch("/api/win_conditions");
+    winConditions = await res.json();
+
+    document.getElementById("gameWincon").innerHTML = winConditions
+      .map(w => `<option value="${w.name}">${w.name}</option>`).join("");
+
+    document.getElementById("winconList").innerHTML = winConditions
+      .map(w => `<div class="wincon-tag">${w.name} <span class="del" onclick="deleteWincon(${w.id})">✕</span></div>`)
+      .join("");
+  }
+
+  function renderSeatInputs(existingParticipants = null) {
+    const podSize = existingParticipants ? existingParticipants.length : parseInt(document.getElementById("podSize").value, 10);
+    if (!existingParticipants) {
+      document.getElementById("podSize").value = podSize;
+    }
+    const container = document.getElementById("seatsContainer");
+
+    const optionsHtml = commanders.map(c => {
+      const cmdName = c.commander_2 ? `${c.commander_1} & ${c.commander_2}` : c.commander_1;
+      return `<option value="${c.id}">${cmdName} (${c.owner})</option>`;
+    }).join("");
+
+    let html = "";
+    for (let seat = 1; seat <= podSize; seat++) {
+      const pData = existingParticipants ? existingParticipants.find(p => p.seat_order === seat) : null;
+      const selectedCmdId = pData ? pData.commander_id : "";
+      const isWinner = pData ? pData.is_winner === 1 : false;
+
+      html += `
+        <div class="seat-box ${isWinner ? 'is-winner' : ''}" id="seatBox_${seat}">
+          <div class="seat-header">
+            <span class="seat-badge">Seat ${seat} ${seat === 1 ? '(1st Turn)' : ''}</span>
+            <label class="winner-toggle" style="margin:0;">
+              <input type="radio" name="gameWinner" value="${seat}" onchange="highlightWinner(${seat})" ${isWinner ? 'checked' : ''} />
+              Winner 🏆
+            </label>
+          </div>
+          <select id="seatCmd_${seat}">
+            <option value="">-- Select Commander --</option>
+            ${optionsHtml}
+          </select>
+        </div>
+      `;
+    }
+    container.innerHTML = html;
+
+    if (existingParticipants) {
+      existingParticipants.forEach(p => {
+        const sel = document.getElementById(`seatCmd_${p.seat_order}`);
+        if (sel) sel.value = p.commander_id;
+      });
+    }
+  }
+
+  function highlightWinner(winningSeat) {
+    document.querySelectorAll(".seat-box").forEach(el => el.classList.remove("is-winner"));
+    const box = document.getElementById(`seatBox_${winningSeat}`);
+    if (box) box.classList.add("is-winner");
+  }
+
+  async function startEditGame(gameId) {
+    const res = await fetch(`/api/games/${gameId}`);
+    if (!res.ok) return showToast("Kon spel niet laden", true);
+    const game = await res.json();
+
+    document.getElementById("editGameId").value = game.id;
+    document.getElementById("podSize").value = game.participants.length;
+    document.getElementById("gameTurns").value = game.turns;
+    document.getElementById("gameDate").value = game.played_at;
+    document.getElementById("gameWincon").value = game.win_condition;
+
+    renderSeatInputs(game.participants);
+
+    document.getElementById("gameFormTitle").textContent = `Edit Game #${game.id}`;
+    document.getElementById("saveGameBtn").textContent = "Save Game Changes";
+    document.getElementById("cancelGameEditBtn").style.display = "block";
+
+    switchTab("log");
+    document.getElementById("gameFormCard").scrollIntoView({ behavior: "smooth" });
+  }
+
+  function cancelEditGame() {
+    document.getElementById("editGameId").value = "";
+    document.getElementById("gameTurns").value = "";
+    setTodayDate();
+    document.getElementById("podSize").value = "4";
+    renderSeatInputs();
+
+    document.getElementById("gameFormTitle").textContent = "Log Completed Game";
+    document.getElementById("saveGameBtn").textContent = "Save Game Result";
+    document.getElementById("cancelGameEditBtn").style.display = "none";
+  }
+
+  async function deleteGame(gameId) {
+    if (!confirm(`Weet je zeker dat je spel #${gameId} wilt verwijderen?`)) return;
+    const res = await fetch(`/api/games/${gameId}`, { method: "DELETE" });
+    if (res.ok) {
+      showToast("Spel verwijderd!");
+      loadStats();
+    } else {
+      showToast("Fout bij verwijderen spel", true);
+    }
+  }
+
+  async function submitCommander() {
+    const editId = document.getElementById("editDeckId").value;
+    const owner = document.getElementById("deckOwner").value.trim();
+    const commander_1 = document.getElementById("deckCmd1").value.trim();
+    const commander_2 = document.getElementById("deckCmd2").value.trim();
+    const mana_cost = document.getElementById("deckMana").value.trim();
+
+    const url = editId ? `/api/commanders/${editId}` : "/api/commanders";
+    const method = editId ? "PUT" : "POST";
+
+    const res = await fetch(url, {
+      method: method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner, commander_1, commander_2, mana_cost })
+    });
+
+    if (res.ok) {
+      if (editId) {
+        cancelEditCommander();
+        showToast("Commander updated!");
+      } else {
+        document.getElementById("deckCmd1").value = "";
+        document.getElementById("deckCmd2").value = "";
+        document.getElementById("deckMana").value = "";
+        showToast("Commander registered!");
+      }
+      await loadCommanders();
+    } else {
+      const err = await res.json();
+      showToast(err.error || "Error saving deck", true);
+    }
+  }
+
+  async function addWincon() {
+    const name = document.getElementById("newWinconName").value.trim();
+    if (!name) return;
+    const res = await fetch("/api/win_conditions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    if (res.ok) {
+      document.getElementById("newWinconName").value = "";
+      loadWinConditions();
+      showToast("Win condition added!");
+    } else {
+      showToast("Could not add win condition", true);
+    }
+  }
+
+  async function deleteWincon(id) {
+    await fetch(`/api/win_conditions/${id}`, { method: "DELETE" });
+    loadWinConditions();
+  }
+
+  async function submitGame() {
+    const editGameId = document.getElementById("editGameId").value;
+    const podSize = parseInt(document.getElementById("podSize").value, 10);
+    const turns = document.getElementById("gameTurns").value;
+    const played_at = document.getElementById("gameDate").value;
+    const win_condition = document.getElementById("gameWincon").value;
+    const winnerRadio = document.querySelector('input[name="gameWinner"]:checked');
+
+    if (!turns || turns < 1) return showToast("Enter number of turns.", true);
+    if (!played_at) return showToast("Select a date.", true);
+    if (!winnerRadio) return showToast("Select who won the game.", true);
+
+    const winningSeat = parseInt(winnerRadio.value, 10);
+    const participants = [];
+    const usedCmdIds = new Set();
+
+    for (let seat = 1; seat <= podSize; seat++) {
+      const cmdId = document.getElementById(`seatCmd_${seat}`).value;
+      if (!cmdId) return showToast(`Select a commander for Seat ${seat}.`, true);
+      if (usedCmdIds.has(cmdId)) return showToast("Same deck selected twice.", true);
+      usedCmdIds.add(cmdId);
+
+      participants.push({
+        commander_id: parseInt(cmdId, 10),
+        seat_order: seat,
+        is_winner: seat === winningSeat
+      });
+    }
+
+    const url = editGameId ? `/api/games/${editGameId}` : "/api/games";
+    const method = editGameId ? "PUT" : "POST";
+
+    const res = await fetch(url, {
+      method: method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ turns, played_at, win_condition, participants })
+    });
+
+    if (res.ok) {
+      if (editGameId) {
+        cancelEditGame();
+        showToast("Spel bijgewerkt!");
+      } else {
+        document.getElementById("gameTurns").value = "";
+        setTodayDate();
+        renderSeatInputs();
+        showToast("Game logged!");
+      }
+      loadStats();
+    } else {
+      const err = await res.json();
+      showToast(err.error || "Error saving game", true);
+    }
+  }
+
+  async function loadStats() {
+    const minGames = document.getElementById("minGamesFilter").value || 1;
+    const period = document.getElementById("timePeriodFilter").value || "all";
+    const res = await fetch(`/api/stats?min_games=${minGames}&period=${period}`);
+    statsData = await res.json();
+
+    document.getElementById("headerGameCount").textContent = `${statsData.total_games} Games`;
+    document.getElementById("kpiTotalGames").textContent = statsData.total_games;
+    document.getElementById("kpiAvgTurns").textContent = statsData.avg_turns;
+
+    document.getElementById("playerLeaderboardBody").innerHTML = statsData.player_stats.map(p => `
+      <tr>
+        <td><strong>${p.owner}</strong></td>
+        <td>${p.games_played}</td>
+        <td>${p.wins}</td>
+        <td><strong>${p.winrate}%</strong></td>
+      </tr>
+    `).join("") || `<tr><td colspan="4" style="color:var(--muted);">No games in this period.</td></tr>`;
+
+    document.getElementById("topPlayedBody").innerHTML = statsData.top_played.map(c => `
+      <tr>
+        <td>${c.display_name}</td>
+        <td>${c.owner}</td>
+        <td>${c.games_played}</td>
+        <td>${c.wins}</td>
+      </tr>
+    `).join("") || `<tr><td colspan="4" style="color:var(--muted);">No data for this period.</td></tr>`;
+
+    document.getElementById("topWinrateBody").innerHTML = statsData.top_winrate.map(c => `
+      <tr>
+        <td>${c.display_name} <span style="color:var(--muted); font-size:0.8rem;">(${c.owner})</span></td>
+        <td>${c.wins}W - ${c.games_played - c.wins}L</td>
+        <td><strong>${c.winrate}%</strong></td>
+      </tr>
+    `).join("") || `<tr><td colspan="3" style="color:var(--muted);">No commanders meet minimum games.</td></tr>`;
+
+    document.getElementById("seatStatsBody").innerHTML = statsData.seat_stats.map(s => `
+      <tr>
+        <td>Seat ${s.seat_order}</td>
+        <td>${s.games}</td>
+        <td>${s.wins}</td>
+        <td>${s.winrate}%</td>
+      </tr>
+    `).join("") || `<tr><td colspan="4" style="color:var(--muted);">No data for this period.</td></tr>`;
+
+    const totalG = statsData.total_games || 1;
+    document.getElementById("winconBreakdown").innerHTML = statsData.wincon_stats.map(w => {
+      const pct = Math.round((w.count / totalG) * 100);
+      return `
+        <div style="margin-bottom:10px;">
+          <div style="display:flex; justify-content:space-between; font-size:0.85rem;">
+            <span>${w.win_condition}</span>
+            <span>${w.count} (${pct}%)</span>
+          </div>
+          <div class="bar-wrap"><div class="bar-fill" style="width:${pct}%;"></div></div>
+        </div>
+      `;
+    }).join("") || `<span style="color:var(--muted); font-size:0.85rem;">No games in this period.</span>`;
+
+    document.getElementById("recentGamesList").innerHTML = statsData.recent_games.map(g => {
+      const playersHtml = g.participants.map(p => {
+        const cmd = p.commander_2 ? `${p.commander_1} & ${p.commander_2}` : p.commander_1;
+        return `<div style="font-size:0.84rem; ${p.is_winner ? 'color:var(--success); font-weight:700;' : 'color:var(--muted);'}">
+          #${p.seat_order} ${cmd} (${p.owner}) ${p.is_winner ? '🏆' : ''}
+        </div>`;
+      }).join("");
+      return `
+        <div style="background:rgba(15, 23, 42, 0.6); border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <span style="font-size:0.8rem; color:var(--accent);">${g.played_date} • Turn ${g.turns} (${g.win_condition})</span>
+            <div style="display:flex; gap:6px;">
+              <button type="button" class="small secondary" style="padding:2px 8px; font-size:0.75rem; margin:0;" onclick="startEditGame(${g.id})">Edit</button>
+              <button type="button" class="small danger" style="padding:2px 8px; font-size:0.75rem; margin:0;" onclick="deleteGame(${g.id})">Del</button>
+            </div>
+          </div>
+          ${playersHtml}
+        </div>
+      `;
+    }).join("") || `<span style="color:var(--muted); font-size:0.85rem;">No recent games in this period.</span>`;
+
+    const owners = Object.keys(statsData.player_profiles);
+    const select = document.getElementById("playerProfileSelect");
+    const currentSelection = select.value;
+    select.innerHTML = owners.map(o => `<option value="${o}">${o}</option>`).join("");
+    if (owners.includes(currentSelection)) select.value = currentSelection;
+    renderPlayerProfile();
+  }
+
+  // --- FILTERING & SORTING LOGIC FOR PLAYER PROFILE TABLE ---
+  function setPlayerSort(column) {
+    if (playerDeckSortBy === column) {
+      playerDeckSortDir = playerDeckSortDir === "asc" ? "desc" : "asc";
+    } else {
+      playerDeckSortBy = column;
+      playerDeckSortDir = "desc"; // Default to high-to-low for stats
+    }
+    renderPlayerProfile();
+  }
+
+  function handlePlayerSearchInput(val) {
+    playerDeckSearch = val.toLowerCase();
+    renderPlayerProfile();
+  }
+
+  function renderPlayerProfile() {
+    const owner = document.getElementById("playerProfileSelect").value;
+    const container = document.getElementById("playerProfileContent");
+    if (!owner || !statsData || !statsData.player_profiles[owner]) {
+      container.innerHTML = `<div class="card">No player data available yet.</div>`;
+      return;
+    }
+
+    const p = statsData.player_profiles[owner];
+    const colorNames = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green", C: "Colorless" };
+    const maxCol = Math.max(...Object.values(p.color_counts), 1);
+
+    const colorBarsHtml = ["W", "U", "B", "R", "G", "C"].map(col => {
+      const count = p.color_counts[col] || 0;
+      const pct = Math.round((count / maxCol) * 100);
+      return `
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+          <span class="pip pip-${col}">${col}</span>
+          <span style="width:72px; font-size:0.85rem;">${colorNames[col]}</span>
+          <div class="bar-wrap" style="flex:1; margin:0;">
+            <div class="bar-fill" style="width:${pct}%;"></div>
+          </div>
+          <span style="width:24px; text-align:right; font-size:0.85rem;">${count}</span>
+        </div>
+      `;
+    }).join("");
+
+    // Filter by search query
+    let decks = [...p.commanders];
+    if (playerDeckSearch) {
+      decks = decks.filter(c => c.display_name.toLowerCase().includes(playerDeckSearch));
+    }
+
+    // Sort by column & direction
+    decks.sort((a, b) => {
+      let valA, valB;
+      if (playerDeckSortBy === "name") {
+        valA = a.display_name.toLowerCase();
+        valB = b.display_name.toLowerCase();
+        return playerDeckSortDir === "asc" ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      } else if (playerDeckSortBy === "games_played") {
+        valA = a.games_played;
+        valB = b.games_played;
+      } else if (playerDeckSortBy === "wins") {
+        valA = a.wins;
+        valB = b.wins;
+      } else if (playerDeckSortBy === "winrate") {
+        valA = a.winrate;
+        valB = b.winrate;
+      }
+      return playerDeckSortDir === "asc" ? valA - valB : valB - valA;
+    });
+
+    const getSortIndicator = (col) => {
+      if (playerDeckSortBy !== col) return "";
+      return playerDeckSortDir === "asc" ? " ▲" : " ▼";
+    };
+
+    const decksHtml = decks.map(c => `
+      <tr>
+        <td>${c.display_name}<br>${renderPips(c.colors)}</td>
+        <td>${c.games_played}</td>
+        <td>${c.wins}</td>
+        <td><strong>${c.winrate}%</strong></td>
+      </tr>
+    `).join("");
+
+    container.innerHTML = `
+      <div class="kpi-grid">
+        <div class="kpi-box">
+          <div class="kpi-val">${p.games_played}</div>
+          <div class="kpi-lbl">Games Played</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-val">${p.winrate}%</div>
+          <div class="kpi-lbl">Winrate (${p.wins}W)</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-val">${p.avg_win_turns || '-'}</div>
+          <div class="kpi-lbl">Avg. Turn on Win</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-val" style="font-size:1rem; padding-top:6px;">${p.favorite_wincon}</div>
+          <div class="kpi-lbl">Signature Wincon</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Color Preference</h2>
+        ${colorBarsHtml}
+      </div>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+          <h2 style="margin:0;">${p.owner}'s Commanders</h2>
+          <input type="text" placeholder="Zoek op decknaam..." value="${playerDeckSearch}" 
+                 oninput="handlePlayerSearchInput(this.value)" 
+                 style="width:auto; flex:1; min-width:160px; max-width:220px; padding:6px 10px; font-size:0.85rem;" />
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="cursor:pointer;" onclick="setPlayerSort('name')">Commander${getSortIndicator('name')}</th>
+              <th style="cursor:pointer;" onclick="setPlayerSort('games_played')">Played${getSortIndicator('games_played')}</th>
+              <th style="cursor:pointer;" onclick="setPlayerSort('wins')">Wins${getSortIndicator('wins')}</th>
+              <th style="cursor:pointer;" onclick="setPlayerSort('winrate')">Winrate${getSortIndicator('winrate')}</th>
+            </tr>
+          </thead>
+          <tbody>${decksHtml || `<tr><td colspan="4" style="color:var(--muted);">Geen decks gevonden.</td></tr>`}</tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  (async function init() {
+    setTodayDate();
+    await checkAuth();
+    await loadWinConditions();
+    await loadCommanders();
+    await loadStats();
+  })();
+</script>
+
+</body>
+</html>
