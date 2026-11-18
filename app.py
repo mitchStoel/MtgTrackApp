@@ -5,13 +5,27 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, session
 
 app = Flask(__name__)
-app.secret_key = "mtg_commander_secret_key_change_me"
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mtg_tracker.db")
+
+# Lees configuratie en secrets uit environment variables
+app.secret_key = os.environ.get("SECRET_KEY", "dev_fallback_secret_key_change_me")
+DB_PATH = os.environ.get(
+    "DB_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "mtg_tracker.db")
+)
+INITIAL_PASSWORD = os.environ.get("INITIAL_PASSWORD", "commander123")
 
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    # Zorg dat de bovenliggende map bestaat (voor o.a. /app/data)
+    db_dir = os.path.dirname(os.path.abspath(DB_PATH))
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
+
+    conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
+    # Schakel foreign keys en WAL-modus in voor betere prestaties en integriteit
+    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute("PRAGMA journal_mode = WAL;")
     return conn
 
 
@@ -64,9 +78,10 @@ def init_db():
         )
     """)
 
+    # Stel initieel wachtwoord in vanuit environment variable als het nog niet in de DB staat
     c.execute("SELECT value FROM settings WHERE key = 'password'")
     if not c.fetchone():
-        c.execute("INSERT INTO settings (key, value) VALUES ('password', 'commander123')")
+        c.execute("INSERT INTO settings (key, value) VALUES ('password', ?)", (INITIAL_PASSWORD,))
 
     c.execute("SELECT COUNT(*) FROM win_conditions")
     if c.fetchone()[0] == 0:
@@ -83,6 +98,10 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+
+# Voer database-initialisatie direct uit bij laden van de module (nodig voor Gunicorn)
+init_db()
 
 
 def parse_colors(mana_cost):
@@ -117,12 +136,12 @@ def auth_status():
 
 @app.route("/api/auth/login", methods=["POST"])
 def login():
-    data = request.json
+    data = request.json or {}
     password = data.get("password", "")
     conn = get_db()
     row = conn.execute("SELECT value FROM settings WHERE key = 'password'").fetchone()
     conn.close()
-    stored_password = row["value"] if row else "commander123"
+    stored_password = row["value"] if row else INITIAL_PASSWORD
 
     if password == stored_password:
         session["authenticated"] = True
@@ -142,7 +161,7 @@ def change_password():
     if not session.get("authenticated", False):
         return jsonify({"error": "Niet ingelogd."}), 401
 
-    data = request.json
+    data = request.json or {}
     current_pw = data.get("current_password", "")
     new_pw = data.get("new_password", "").strip()
 
@@ -151,7 +170,7 @@ def change_password():
 
     conn = get_db()
     row = conn.execute("SELECT value FROM settings WHERE key = 'password'").fetchone()
-    stored_password = row["value"] if row else "commander123"
+    stored_password = row["value"] if row else INITIAL_PASSWORD
 
     if current_pw != stored_password:
         conn.close()
@@ -181,7 +200,7 @@ def add_commander():
     if not session.get("authenticated", False):
         return jsonify({"error": "Niet ingelogd."}), 401
 
-    data = request.json
+    data = request.json or {}
     owner = data.get("owner", "").strip()
     cmd1 = data.get("commander_1", "").strip()
     cmd2 = data.get("commander_2", "").strip()
@@ -205,7 +224,7 @@ def update_commander(cmd_id):
     if not session.get("authenticated", False):
         return jsonify({"error": "Niet ingelogd."}), 401
 
-    data = request.json
+    data = request.json or {}
     owner = data.get("owner", "").strip()
     cmd1 = data.get("commander_1", "").strip()
     cmd2 = data.get("commander_2", "").strip()
@@ -239,7 +258,7 @@ def add_win_condition():
     if not session.get("authenticated", False):
         return jsonify({"error": "Niet ingelogd."}), 401
 
-    name = request.json.get("name", "").strip()
+    name = (request.json or {}).get("name", "").strip()
     if not name:
         return jsonify({"error": "Name required"}), 400
     conn = get_db()
@@ -270,7 +289,7 @@ def log_game():
     if not session.get("authenticated", False):
         return jsonify({"error": "Niet ingelogd."}), 401
 
-    data = request.json
+    data = request.json or {}
     turns = data.get("turns")
     win_condition = data.get("win_condition", "").strip()
     played_at = data.get("played_at", "").strip()
@@ -311,7 +330,10 @@ def log_game():
 @app.route("/api/games/<int:game_id>", methods=["GET"])
 def get_single_game(game_id):
     conn = get_db()
-    g = conn.execute("SELECT id, turns, win_condition, substr(played_at, 1, 10) as played_at FROM games WHERE id = ?", (game_id,)).fetchone()
+    g = conn.execute(
+        "SELECT id, turns, win_condition, substr(played_at, 1, 10) as played_at FROM games WHERE id = ?",
+        (game_id,)
+    ).fetchone()
     if not g:
         conn.close()
         return jsonify({"error": "Game not found"}), 404
@@ -338,7 +360,7 @@ def update_game(game_id):
     if not session.get("authenticated", False):
         return jsonify({"error": "Niet ingelogd."}), 401
 
-    data = request.json
+    data = request.json or {}
     turns = data.get("turns")
     win_condition = data.get("win_condition", "").strip()
     played_at = data.get("played_at", "").strip()
@@ -607,7 +629,6 @@ def get_local_ip():
 
 
 if __name__ == "__main__":
-    init_db()
     local_ip = get_local_ip()
     print("\n====================================================")
     print(" MTG Commander Tracker is running!")

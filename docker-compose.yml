@@ -1,0 +1,31 @@
+services:
+  mtg-tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: edh-nebula-tracker
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-5000}:5000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-fallback_secret_key_change_me_in_env}
+      - INITIAL_PASSWORD=${INITIAL_PASSWORD:-commander123}
+      - DB_PATH=/app/data/mtg_tracker.db
+    volumes:
+      - mtg_data:/app/data
+    networks:
+      - mtg_internal_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/auth/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mtg_data:
+    driver: local
+
+networks:
+  mtg_internal_net:
+    driver: bridge
