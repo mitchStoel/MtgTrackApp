@@ -381,6 +381,52 @@ button.trash-icon-button svg {
   stroke-width: 1.8;
 }
 
+button.edit-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  padding: 6px;
+  margin: 0;
+  clip-path: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gold-bright);
+  box-shadow: none;
+  letter-spacing: 0;
+}
+
+button.edit-icon-button:hover {
+  border-color: rgba(242, 190, 84, 0.4);
+  background: rgba(242, 190, 84, 0.12);
+  box-shadow: none;
+  filter: none;
+}
+
+button.edit-icon-button:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
+button.edit-icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.deck-action-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
 /* Losse Mana & Power Level Iconen */
 .icon-img {
   display: inline-block;
@@ -916,18 +962,56 @@ tr.deck-inactive strong {
   font-size: 0.88rem;
 }
 
-/* Toggle 3 en 4 player games */
+.stats-filter-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(150px, 210px);
+  align-items: center;
+  gap: 10px;
+}
+
+.stats-filter-label {
+  color: var(--muted);
+  font-size: 0.98rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stats-time-filter {
+  grid-column: 3;
+  grid-row: 1;
+  width: 100%;
+  min-width: 0;
+  max-width: 210px;
+  padding: 8px 10px;
+  font-size: 0.96rem;
+}
+
 .pod-toggle-group {
   display: flex;
-  gap: 6px;
-  margin-top: 10px;
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  gap: 4px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: rgba(12, 18, 28, 0.48);
 }
 
 .pod-toggle-group button {
-  flex: 1;
-  margin-top: 0;
-  padding: 7px 10px;
-  font-size: 0.78rem;
+  width: auto;
+  min-width: 0;
+  flex: 1 1 0;
+  margin: 0;
+  padding: 8px 6px;
+  border-radius: 6px;
+  clip-path: none;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  white-space: nowrap;
   background: rgba(24, 33, 46, 0.68);
   color: var(--muted);
   border: 1px solid var(--border-subtle);
@@ -939,6 +1023,75 @@ tr.deck-inactive strong {
   color: #fff6e5;
   border-color: rgba(242, 190, 84, 0.65);
   box-shadow: 0 3px 10px rgba(168, 100, 16, 0.32);
+}
+
+@media (max-width: 600px) {
+  .stats-filter-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .pod-toggle-group {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .stats-time-filter {
+    grid-column: 2;
+    grid-row: 1;
+    max-width: none;
+  }
+
+  .registered-decks-table {
+    table-layout: fixed;
+  }
+
+  .registered-decks-table th,
+  .registered-decks-table td {
+    padding: 8px 3px;
+  }
+
+  .registered-decks-table th {
+    font-size: 0.62rem;
+    letter-spacing: 0.2px;
+  }
+
+  .registered-decks-table th:nth-child(1),
+  .registered-decks-table td:nth-child(1) {
+    width: 32%;
+    overflow-wrap: anywhere;
+  }
+
+  .registered-decks-table th:nth-child(2),
+  .registered-decks-table td:nth-child(2) {
+    width: 20%;
+    overflow-wrap: anywhere;
+  }
+
+  .registered-decks-table th:nth-child(3),
+  .registered-decks-table td:nth-child(3) {
+    width: 16%;
+    text-align: center;
+  }
+
+  .registered-decks-table th:nth-child(4),
+  .registered-decks-table td:nth-child(4) {
+    width: 32%;
+    text-align: right;
+  }
+
+  .registered-decks-table .edit-icon-button,
+  .registered-decks-table .trash-icon-button {
+    flex-basis: 30px;
+    width: 30px;
+    height: 30px;
+    padding: 4px;
+  }
+
+  .registered-decks-table .edit-icon-button svg,
+  .registered-decks-table .trash-icon-button svg {
+    width: 16px;
+    height: 16px;
+  }
 }
 
 /* Raster per speler voor kleurencombinaties */
