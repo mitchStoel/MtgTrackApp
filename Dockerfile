@@ -41,6 +41,7 @@ COPY --from=builder /opt/venv /opt/venv
 # Kopieer applicatiecode en maak de data-directory aan voor persistent storage
 COPY app.py .
 COPY templates/ ./templates/
+COPY static/ ./static/
 RUN mkdir -p /app/data && chown -R appuser:appgroup /app
 
 # Schakel over naar non-root gebruiker
