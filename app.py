@@ -16,14 +16,12 @@ INITIAL_PASSWORD = os.environ.get("INITIAL_PASSWORD", "commander123")
 
 
 def get_db():
-    # Zorg dat de bovenliggende map bestaat (voor o.a. /app/data)
     db_dir = os.path.dirname(os.path.abspath(DB_PATH))
     if db_dir and not os.path.exists(db_dir):
         os.makedirs(db_dir, exist_ok=True)
 
     conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
-    # Schakel foreign keys en WAL-modus in voor betere prestaties en integriteit
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.execute("PRAGMA journal_mode = WAL;")
     return conn
@@ -39,9 +37,15 @@ def init_db():
             owner TEXT NOT NULL,
             commander_1 TEXT NOT NULL,
             commander_2 TEXT DEFAULT '',
-            mana_cost TEXT NOT NULL
+            mana_cost TEXT NOT NULL,
+            power_level INTEGER NOT NULL DEFAULT 3
         )
     """)
+
+    # Veilige migratie voor bestaande databases zonder power_level kolom
+    columns = [row["name"] for row in c.execute("PRAGMA table_info(commanders)").fetchall()]
+    if "power_level" not in columns:
+        c.execute("ALTER TABLE commanders ADD COLUMN power_level INTEGER NOT NULL DEFAULT 3")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS games (
@@ -78,7 +82,6 @@ def init_db():
         )
     """)
 
-    # Stel initieel wachtwoord in vanuit environment variable als het nog niet in de DB staat
     c.execute("SELECT value FROM settings WHERE key = 'password'")
     if not c.fetchone():
         c.execute("INSERT INTO settings (key, value) VALUES ('password', ?)", (INITIAL_PASSWORD,))
@@ -100,7 +103,7 @@ def init_db():
     conn.close()
 
 
-# Voer database-initialisatie direct uit bij laden van de module (nodig voor Gunicorn)
+# Voer database-initialisatie direct uit bij laden van de module
 init_db()
 
 
@@ -111,6 +114,14 @@ def parse_colors(mana_cost):
         if char in upper_cost:
             colors.add(char)
     return list(colors) if colors else ["C"]
+
+
+def parse_power_level(val):
+    try:
+        lvl = int(val)
+        return max(1, min(5, lvl))
+    except (TypeError, ValueError):
+        return 3
 
 
 def get_cutoff_date(period):
@@ -191,6 +202,7 @@ def get_commanders():
     for r in rows:
         item = dict(r)
         item["colors"] = parse_colors(item["mana_cost"])
+        item["power_level"] = parse_power_level(item.get("power_level", 3))
         result.append(item)
     return jsonify(result)
 
@@ -205,14 +217,15 @@ def add_commander():
     cmd1 = data.get("commander_1", "").strip()
     cmd2 = data.get("commander_2", "").strip()
     mana_cost = data.get("mana_cost", "").strip()
+    power_level = parse_power_level(data.get("power_level", 3))
 
     if not owner or not cmd1 or not mana_cost:
         return jsonify({"error": "Owner, primary commander, and mana cost are required."}), 400
 
     conn = get_db()
     conn.execute(
-        "INSERT INTO commanders (owner, commander_1, commander_2, mana_cost) VALUES (?, ?, ?, ?)",
-        (owner, cmd1, cmd2, mana_cost)
+        "INSERT INTO commanders (owner, commander_1, commander_2, mana_cost, power_level) VALUES (?, ?, ?, ?, ?)",
+        (owner, cmd1, cmd2, mana_cost, power_level)
     )
     conn.commit()
     conn.close()
@@ -229,6 +242,7 @@ def update_commander(cmd_id):
     cmd1 = data.get("commander_1", "").strip()
     cmd2 = data.get("commander_2", "").strip()
     mana_cost = data.get("mana_cost", "").strip()
+    power_level = parse_power_level(data.get("power_level", 3))
 
     if not owner or not cmd1 or not mana_cost:
         return jsonify({"error": "Owner, primary commander, and mana cost are required."}), 400
@@ -236,9 +250,9 @@ def update_commander(cmd_id):
     conn = get_db()
     conn.execute(
         """UPDATE commanders
-           SET owner = ?, commander_1 = ?, commander_2 = ?, mana_cost = ?
+           SET owner = ?, commander_1 = ?, commander_2 = ?, mana_cost = ?, power_level = ?
            WHERE id = ?""",
-        (owner, cmd1, cmd2, mana_cost, cmd_id)
+        (owner, cmd1, cmd2, mana_cost, power_level, cmd_id)
     )
     conn.commit()
     conn.close()
@@ -454,6 +468,7 @@ def get_stats():
                 c.commander_1,
                 c.commander_2,
                 c.mana_cost,
+                c.power_level,
                 COUNT(gp.id) as games_played,
                 COALESCE(SUM(gp.is_winner), 0) as wins,
                 COALESCE(ROUND(100.0 * SUM(gp.is_winner) / NULLIF(COUNT(gp.id), 0), 1), 0) as winrate
@@ -474,6 +489,7 @@ def get_stats():
                 c.commander_1,
                 c.commander_2,
                 c.mana_cost,
+                c.power_level,
                 COUNT(gp.id) as games_played,
                 COALESCE(SUM(gp.is_winner), 0) as wins,
                 COALESCE(ROUND(100.0 * SUM(gp.is_winner) / NULLIF(COUNT(gp.id), 0), 1), 0) as winrate
@@ -487,6 +503,7 @@ def get_stats():
         d = dict(r)
         d["display_name"] = f"{d['commander_1']} & {d['commander_2']}" if d["commander_2"] else d["commander_1"]
         d["colors"] = parse_colors(d["mana_cost"])
+        d["power_level"] = parse_power_level(d.get("power_level", 3))
         all_cmds.append(d)
 
     played_cmds = [c for c in all_cmds if c["games_played"] > 0]
