@@ -1,4 +1,4 @@
-# 🌌 EDH Nebula Pod Tracker
+# 🌌 EDH Playgroup
 
 Een zelf-gehoste, mobielvriendelijke webapplicatie voor het bijhouden van Magic: The Gathering Commander (EDH) potjes, decks, wincondities en uitgebreide statistieken.
 
