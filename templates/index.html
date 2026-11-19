@@ -35,6 +35,20 @@
 
 <div id="toast" class="toast">Saved!</div>
 
+<dialog id="commanderDeleteDialog" class="commander-delete-dialog" aria-labelledby="commanderDeleteTitle">
+  <div class="commander-delete-content">
+    <h2 id="commanderDeleteTitle">Commander verwijderen</h2>
+    <p id="commanderDeleteMessage"></p>
+    <p id="commanderDeleteDetails" class="commander-delete-details"></p>
+    <div class="commander-delete-actions">
+      <button id="deleteCommanderWithStatsBtn" type="button" class="danger" onclick="applyCommanderDelete('delete_with_stats')">Commander + statistieken verwijderen</button>
+      <button id="deleteCommanderKeepStatsBtn" type="button" class="secondary" onclick="applyCommanderDelete('delete_keep_stats')">Commander verwijderen, statistieken behouden</button>
+      <button id="deactivateCommanderBtn" type="button" class="secondary" onclick="applyCommanderDelete('inactive')">Commander op non-actief zetten</button>
+      <button type="button" class="secondary" onclick="closeCommanderDeleteDialog()">Annuleren</button>
+    </div>
+  </div>
+</dialog>
+
 <div class="container">
 
   <!-- TAB 1: LOG GAME -->
@@ -99,6 +113,17 @@
         <input type="text" id="deckCmd2" autocomplete="off" placeholder="Zoek partner/background of laat leeg..." oninput="onCommanderInput(2, this.value)" />
         <div id="cmdSuggestions_2" class="autocomplete-list"></div>
       </div>
+  
+      <div class="status-toggle-box" id="deckStatusBox" style="display:none;">
+        <div>
+          <div style="font-weight:700; color:var(--parchment); display:flex; align-items:center; gap:6px;">
+            <img src="/static/icons/inactive.png" alt="inactive" class="icon-inactive" onerror="this.style.display='none';" />
+            Deck op non-actief zetten
+          </div>
+          <div style="font-size:0.86rem; color:var(--muted);">Vink aan als dit deck uit elkaar gehaald is.</div>
+        </div>
+        <input type="checkbox" id="deckInactiveCheckbox" />
+      </div>
 
       <label>Mana Cost</label>
       <input type="text" id="deckMana" placeholder="Wordt automatisch gevuld via Scryfall, bijv. {G}{W}{U}{B}" oninput="syncColorIdentityFromManaInput()" />
@@ -141,29 +166,45 @@
     </div>
 
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
         <h2 style="margin:0;">Registered Decks (<span id="deckCount">0</span>)</h2>
-        <div style="display:flex; gap:6px;">
-          <select id="deckPowerFilter" style="width:auto; padding:6px 8px; font-size:0.9rem;" onchange="renderDecksTable()">
-            <option value="">All Levels</option>
-            <option value="1">LV. 1</option>
-            <option value="2">LV. 2</option>
-            <option value="3">LV. 3</option>
-            <option value="4">LV. 4</option>
-            <option value="5">LV. 5</option>
-          </select>
-          <select id="deckOwnerFilter" style="width:auto; max-width:140px; padding:6px 8px; font-size:0.9rem;" onchange="renderDecksTable()">
-            <option value="">All Owners</option>
-          </select>
-        </div>
       </div>
+
+      <div class="decks-toolbar">
+        <select id="deckSortBy" onchange="renderDecksTable()">
+          <option value="newest">Sorteer: Nieuwste</option>
+          <option value="alpha_asc" selected>Sorteer: Alfabetisch (A–Z)</option>
+          <option value="alpha_desc">Sorteer: Alfabetisch (Z–A)</option>
+          <option value="colors">Sorteer: Kleurencombinatie</option>
+        </select>
+
+        <select id="deckStatusFilter" onchange="renderDecksTable()">
+          <option value="all" selected>Alle statussen</option>
+          <option value="active">Alleen actief</option>
+          <option value="inactive">Alleen non-actief</option>
+        </select>
+
+        <select id="deckPowerFilter" onchange="renderDecksTable()">
+          <option value="">All Levels</option>
+          <option value="1">LV. 1</option>
+          <option value="2">LV. 2</option>
+          <option value="3">LV. 3</option>
+          <option value="4">LV. 4</option>
+          <option value="5">LV. 5</option>
+        </select>
+
+        <select id="deckOwnerFilter" onchange="renderDecksTable()">
+          <option value="">All Owners</option>
+        </select>
+      </div>
+
       <table>
         <thead>
           <tr>
-            <th>Commander(s)</th>
+            <th style="cursor:pointer;" onclick="toggleDeckHeaderSort()">Commander(s)</th>
             <th>Owner</th>
             <th style="text-align:center;">Power</th>
-            <th style="text-align:right;">Edit</th>
+            <th style="text-align:right;">Actions</th>
           </tr>
         </thead>
         <tbody id="registeredDecksTable"></tbody>
@@ -176,6 +217,11 @@
     <div class="card" style="padding:12px 16px;">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
         <span style="font-size:0.98rem; color:var(--muted); font-weight:600;">Time Period:</span>
+        <div class="pod-toggle-group">
+          <button type="button" id="podFilterBtn_all" class="active" onclick="setStatsPodFilter('all')">Alle Pods</button>
+          <button type="button" id="podFilterBtn_3" onclick="setStatsPodFilter('3')">3-Player Games</button>
+          <button type="button" id="podFilterBtn_4" onclick="setStatsPodFilter('4')">4-Player Games</button>
+        </div>
         <select id="timePeriodFilter" style="width:auto; flex:1; max-width:210px; padding:8px 10px; font-size:0.96rem;" onchange="loadStats()">
           <option value="all" selected>All Time</option>
           <option value="30d">Last 30 Days</option>
@@ -322,6 +368,7 @@
   let commanders = [];
   let winConditions = [];
   let statsData = null;
+  let pendingCommanderDeleteId = null;
 
   let playerDeckSearch = "";
   let playerDeckSortBy = "games_played";
@@ -332,6 +379,43 @@
   let scryfallResultsCache = { 1: [], 2: [] };
 
   const WUBRG_ORDER = ["W", "U", "B", "R", "G"];
+
+  let statsPodFilter = "all";
+
+    const ALL_32_COMBINATIONS = [
+      { key: "C", name: "Colorless", colors: ["C"] },
+      { key: "W", name: "Mono White", colors: ["W"] },
+      { key: "U", name: "Mono Blue", colors: ["U"] },
+      { key: "B", name: "Mono Black", colors: ["B"] },
+      { key: "R", name: "Mono Red", colors: ["R"] },
+      { key: "G", name: "Mono Green", colors: ["G"] },
+      { key: "WU", name: "Azorius", colors: ["W", "U"] },
+      { key: "UB", name: "Dimir", colors: ["U", "B"] },
+      { key: "BR", name: "Rakdos", colors: ["B", "R"] },
+      { key: "RG", name: "Gruul", colors: ["R", "G"] },
+      { key: "WG", name: "Selesnya", colors: ["W", "G"] },
+      { key: "WB", name: "Orzhov", colors: ["W", "B"] },
+      { key: "UR", name: "Izzet", colors: ["U", "R"] },
+      { key: "BG", name: "Golgari", colors: ["B", "G"] },
+      { key: "WR", name: "Boros", colors: ["W", "R"] },
+      { key: "UG", name: "Simic", colors: ["U", "G"] },
+      { key: "WUB", name: "Esper", colors: ["W", "U", "B"] },
+      { key: "UBR", name: "Grixis", colors: ["U", "B", "R"] },
+      { key: "BRG", name: "Jund", colors: ["B", "R", "G"] },
+      { key: "WRG", name: "Naya", colors: ["W", "R", "G"] },
+      { key: "WUG", name: "Bant", colors: ["W", "U", "G"] },
+      { key: "WBG", name: "Abzan", colors: ["W", "B", "G"] },
+      { key: "WUR", name: "Jeskai", colors: ["W", "U", "R"] },
+      { key: "UBG", name: "Sultai", colors: ["U", "B", "G"] },
+      { key: "WBR", name: "Mardu", colors: ["W", "B", "R"] },
+      { key: "URG", name: "Temur", colors: ["U", "R", "G"] },
+      { key: "WUBR", name: "Yore-Tiller", colors: ["W", "U", "B", "R"] },
+      { key: "UBRG", name: "Glint-Eye", colors: ["U", "B", "R", "G"] },
+      { key: "WBRG", name: "Dune-Brood", colors: ["W", "B", "R", "G"] },
+      { key: "WURG", name: "Ink-Treader", colors: ["W", "U", "R", "G"] },
+      { key: "WUBG", name: "Witch-Maw", colors: ["W", "U", "B", "G"] },
+      { key: "WUBRG", name: "Five-Color", colors: ["W", "U", "B", "R", "G"] }
+    ];
 
   const POWER_LEVELS = {
     1: { label: "LV. 1", desc: "Casual", text: "#cbd5e1" },
@@ -361,6 +445,40 @@
   function renderPips(colors, size = 22) {
     const list = colors && colors.length ? colors : ["C"];
     return list.map(c => getManaImgHtml(c, size)).join("");
+  }
+
+  const COLOR_COMBO_ORDER = [
+    "C", "W", "U", "B", "R", "G",
+    "WU", "UB", "BR", "RG", "WG", "WB", "UR", "BG", "WR", "UG",
+    "WUB", "UBR", "BRG", "WRG", "WUG", "WBG", "WUR", "UBG", "WBR", "URG",
+    "WUBR", "UBRG", "WBRG", "WURG", "WUBG", "WUBRG"
+  ];
+
+  function getDeckDisplayName(c) {
+    return c.commander_2 ? `${c.commander_1} & ${c.commander_2}` : c.commander_1;
+  }
+
+  function getColorSortRank(colors) {
+    const key = (!colors || !colors.length || (colors.length === 1 && colors[0] === "C"))
+      ? "C"
+      : (WUBRG_ORDER.filter(col => colors.includes(col)).join("") || "C");
+    const idx = COLOR_COMBO_ORDER.indexOf(key);
+    return idx === -1 ? 999 : idx;
+  }
+
+  function renderInactiveBadge() {
+    return `
+      <span class="inactive-badge" title="Deck is uit elkaar gehaald (non-actief)">
+        <img src="/static/icons/inactive.png" alt="inactive" class="icon-inactive" onerror="this.style.display='none';" />
+        inactive
+      </span>
+    `;
+  }
+
+  function toggleDeckHeaderSort() {
+    const sortEl = document.getElementById("deckSortBy");
+    sortEl.value = sortEl.value === "alpha_asc" ? "alpha_desc" : "alpha_asc";
+    renderDecksTable();
   }
 
   // Parses strings like "{2}{G}{U}" or "2GU" into mana-<token>.png icons
@@ -713,7 +831,8 @@
     const res = await fetch("/api/commanders");
     commanders = await res.json();
 
-    const owners = [...new Set(commanders.map(c => c.owner))];
+    const availableCommanders = commanders.filter(c => !c.is_deleted);
+    const owners = [...new Set(availableCommanders.map(c => c.owner))];
     document.getElementById("ownerSuggestions").innerHTML = owners.map(o => `<option value="${o}">`).join("");
 
     const filterSelect = document.getElementById("deckOwnerFilter");
@@ -730,27 +849,57 @@
   function renderDecksTable() {
     const selectedOwner = document.getElementById("deckOwnerFilter").value;
     const selectedPower = document.getElementById("deckPowerFilter").value;
+    const selectedStatus = document.getElementById("deckStatusFilter").value;
+    const sortBy = document.getElementById("deckSortBy").value;
 
-    let filtered = commanders;
+    let filtered = commanders.filter(c => !c.is_deleted);
     if (selectedOwner) {
       filtered = filtered.filter(c => c.owner === selectedOwner);
     }
     if (selectedPower) {
       filtered = filtered.filter(c => String(c.power_level) === selectedPower);
     }
+    if (selectedStatus === "active") {
+      filtered = filtered.filter(c => (c.is_active ?? 1) === 1);
+    } else if (selectedStatus === "inactive") {
+      filtered = filtered.filter(c => (c.is_active ?? 1) === 0);
+    }
+
+    if (sortBy === "alpha_asc") {
+      filtered.sort((a, b) => getDeckDisplayName(a).localeCompare(getDeckDisplayName(b)));
+    } else if (sortBy === "alpha_desc") {
+      filtered.sort((a, b) => getDeckDisplayName(b).localeCompare(getDeckDisplayName(a)));
+    } else if (sortBy === "colors") {
+      filtered.sort((a, b) => {
+        const rankDiff = getColorSortRank(a.colors) - getColorSortRank(b.colors);
+        if (rankDiff !== 0) return rankDiff;
+        return getDeckDisplayName(a).localeCompare(getDeckDisplayName(b));
+      });
+    }
 
     document.getElementById("deckCount").textContent = filtered.length;
     document.getElementById("registeredDecksTable").innerHTML = filtered.map(c => {
-      const name = c.commander_2 ? `${c.commander_1} & ${c.commander_2}` : c.commander_1;
-      return `<tr>
+      const name = getDeckDisplayName(c);
+      const isInactive = (c.is_active ?? 1) === 0;
+      return `<tr class="${isInactive ? 'deck-inactive' : ''}">
         <td>
-          <strong>${name}</strong>
+          <div>
+            <strong>${name}</strong>
+            ${isInactive ? renderInactiveBadge() : ""}
+          </div>
           <div style="margin-top:4px;">${renderPips(c.colors, 20)}</div>
         </td>
         <td>${c.owner}</td>
         <td style="text-align:center;">${renderPowerBadge(c.power_level)}</td>
         <td style="text-align:right;">
-          <button type="button" class="small secondary" onclick="startEditCommander(${c.id})">Edit</button>
+          <div style="display:flex; justify-content:flex-end; gap:6px;">
+            <button type="button" class="small secondary" onclick="startEditCommander(${c.id})">Edit</button>
+            <button type="button" class="trash-icon-button" aria-label="Remove commander" title="Remove commander" onclick="requestDeleteCommander(${c.id})">
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 3v8m6-8v8" />
+              </svg>
+            </button>
+          </div>
         </td>
       </tr>`;
     }).join("") || `<tr><td colspan="4" style="color:var(--muted);">No decks found.</td></tr>`;
@@ -769,12 +918,66 @@
     setColorIdentity(deck.colors || []);
     selectPowerLevel(deck.power_level || 3);
 
+    document.getElementById("deckStatusBox").style.display = "flex";
+    document.getElementById("deckInactiveCheckbox").checked = (deck.is_active ?? 1) === 0;
     document.getElementById("deckFormTitle").textContent = "Edit Commander / Deck";
     document.getElementById("saveDeckBtn").textContent = "Save Changes";
     document.getElementById("cancelEditBtn").style.display = "block";
 
     document.getElementById("deckFormCard").scrollIntoView({ behavior: "smooth" });
   }
+function setStatsPodFilter(podVal) {
+    statsPodFilter = podVal;
+    ["all", "3", "4"].forEach(val => {
+      const btn = document.getElementById(`podFilterBtn_${val}`);
+      if (btn) btn.classList.toggle("active", val === podVal);
+    });
+    loadStats();
+  }
+
+function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiveCounts = {}) {
+  const activeSet = new Set(activeIds || []);
+  const inactiveSet = new Set(inactiveIds || []);
+
+  const tilesHtml = ALL_32_COMBINATIONS.map(combo => {
+    const activeCount = activeCounts[combo.key] || 0;
+    const inactiveCount = inactiveCounts[combo.key] || 0;
+    const hasActive = activeSet.has(combo.key) || activeCount > 0;
+    const hasInactiveOnly = !hasActive && (inactiveSet.has(combo.key) || inactiveCount > 0);
+
+    let stateClass = "missing";
+    let statusLabel = "0 decks";
+    if (hasActive) {
+      stateClass = "owned";
+      const count = activeCount || 1;
+      statusLabel = `${count} ${count === 1 ? "deck" : "decks"}`;
+    } else if (hasInactiveOnly) {
+      stateClass = "owned-inactive";
+      const count = inactiveCount || 1;
+      statusLabel = `${count} non-actief`;
+    }
+
+    return `
+      <div class="combo-tile ${stateClass}" title="${combo.name} (${combo.key}) - ${statusLabel}">
+        <div class="combo-pips">${renderPips(combo.colors, 18)}</div>
+        <div class="combo-name">${combo.name}</div>
+        <div class="combo-status-tag">${statusLabel}</div>
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <h2 style="margin:0;">Kleurencombinaties</h2>
+        <span style="font-family:var(--font-display); font-size:0.85rem; color:var(--gold-bright); font-weight:700;">
+          ${activeSet.size} / 32
+        </span>
+      </div>
+      <div class="combo-grid">${tilesHtml}</div>
+    </div>
+  `;
+}
 
   function cancelEditCommander() {
     document.getElementById("editDeckId").value = "";
@@ -784,6 +987,8 @@
     clearManaAndIdentity();
     selectPowerLevel(3);
 
+    document.getElementById("deckStatusBox").style.display = "none";
+    document.getElementById("deckInactiveCheckbox").checked = false;
     document.getElementById("deckFormTitle").textContent = "Register Commander / Deck";
     document.getElementById("saveDeckBtn").textContent = "Register Deck";
     document.getElementById("cancelEditBtn").style.display = "none";
@@ -801,8 +1006,9 @@
       .join("");
   }
 
-  function getUniquePlayers() {
-    return [...new Set(commanders.map(c => c.owner))].sort((a, b) => a.localeCompare(b));
+  function getUniquePlayers(includeArchived = false) {
+    return [...new Set(commanders.filter(c => includeArchived || !c.is_deleted).map(c => c.owner))]
+      .sort((a, b) => a.localeCompare(b));
   }
 
   function populateSeatCommanders(seat, selectedOwner, selectedCmdId = "") {
@@ -815,19 +1021,30 @@
       return;
     }
 
-    const ownerDecks = commanders.filter(c => c.owner === selectedOwner);
-    cmdSelect.disabled = false;
-    cmdSelect.innerHTML =
-      `<option value="">-- Select Commander (${selectedOwner}) --</option>` +
-      ownerDecks.map(c => {
-        const cmdName = c.commander_2 ? `${c.commander_1} & ${c.commander_2}` : c.commander_1;
-        return `<option value="${c.id}">${cmdName} [LV.${c.power_level || 3}]</option>`;
-      }).join("");
+    const ownerDecks = commanders
+      .filter(c =>
+        c.owner === selectedOwner &&
+        ((!c.is_deleted && (c.is_active ?? 1) === 1) || String(c.id) === String(selectedCmdId))
+      )
+      .sort((a, b) => {
+        const nameA = a.commander_2 ? `${a.commander_1} & ${a.commander_2}` : a.commander_1;
+        const nameB = b.commander_2 ? `${b.commander_1} & ${b.commander_2}` : b.commander_1;
+        return nameA.localeCompare(nameB);
+      });
 
-    if (selectedCmdId) {
-      cmdSelect.value = String(selectedCmdId);
+      cmdSelect.disabled = false;
+      cmdSelect.innerHTML =
+        `<option value="">-- Select Commander (${selectedOwner}) --</option>` +
+        ownerDecks.map(c => {
+          const cmdName = c.commander_2 ? `${c.commander_1} & ${c.commander_2}` : c.commander_1;
+          const inactiveTag = (c.is_active ?? 1) === 0 ? " (inactive)" : "";
+          return `<option value="${c.id}">${cmdName} [LV.${c.power_level || 3}]${inactiveTag}</option>`;
+        }).join("");
+
+        if (selectedCmdId) {
+          cmdSelect.value = String(selectedCmdId);
+        }
     }
-  }
 
   function onSeatPlayerChange(seat) {
     const playerSelect = document.getElementById(`seatPlayer_${seat}`);
@@ -841,7 +1058,7 @@
       document.getElementById("podSize").value = podSize;
     }
     const container = document.getElementById("seatsContainer");
-    const players = getUniquePlayers();
+    const players = getUniquePlayers(Boolean(existingParticipants));
 
     const playerOptionsHtml =
       `<option value="">-- Select Player --</option>` +
@@ -937,6 +1154,75 @@
     }
   }
 
+  async function requestDeleteCommander(id) {
+    const res = await fetch(`/api/commanders/${id}/usage`);
+    if (!res.ok) {
+      const err = await res.json();
+      showToast(err.error || "Commander usage could not be loaded", true);
+      return;
+    }
+
+    const usage = await res.json();
+    const commander = commanders.find(c => c.id === id);
+    if (!commander) {
+      showToast("Commander not found", true);
+      return;
+    }
+
+    pendingCommanderDeleteId = id;
+    const name = getDeckDisplayName(commander);
+    const hasStats = usage.games_count > 0;
+    document.getElementById("commanderDeleteMessage").textContent = hasStats
+      ? `${name} (${commander.owner}) komt voor in ${usage.games_count} gespeelde game(s). Kies wat er met de gegevens gebeurt.`
+      : `${name} (${commander.owner}) komt niet voor in gespeelde games. Je kunt de commander verwijderen of non-actief maken.`;
+    document.getElementById("commanderDeleteDetails").textContent = hasStats
+      ? "Optie 1 verwijdert de resultaten van deze commander; games en statistieken van andere deelnemers blijven behouden. Optie 2 bewaart alle historische statistieken maar verbergt de commander uit de decklijst."
+      : "";
+    document.getElementById("deleteCommanderWithStatsBtn").textContent = hasStats
+      ? "1. Commander + eigen statistieken verwijderen"
+      : "Commander verwijderen";
+    document.getElementById("deleteCommanderKeepStatsBtn").style.display = hasStats ? "block" : "none";
+    document.getElementById("deactivateCommanderBtn").textContent = hasStats
+      ? "3. Commander op non-actief zetten"
+      : "Commander op non-actief zetten";
+    document.getElementById("commanderDeleteDialog").showModal();
+  }
+
+  function closeCommanderDeleteDialog() {
+    document.getElementById("commanderDeleteDialog").close();
+    pendingCommanderDeleteId = null;
+  }
+
+  async function applyCommanderDelete(action) {
+    if (pendingCommanderDeleteId === null) return;
+
+    const id = pendingCommanderDeleteId;
+    const res = await fetch(`/api/commanders/${id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action })
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      showToast(err.error || "Commander could not be removed", true);
+      return;
+    }
+
+    closeCommanderDeleteDialog();
+    if (document.getElementById("editDeckId").value === String(id)) {
+      cancelEditCommander();
+    }
+    const messages = {
+      delete_with_stats: "Commander en eigen statistieken verwijderd",
+      delete_keep_stats: "Commander verwijderd; statistieken behouden",
+      inactive: "Commander op non-actief gezet"
+    };
+    showToast(messages[action]);
+    await loadCommanders();
+    await loadStats();
+  }
+
   async function submitCommander() {
     const editId = document.getElementById("editDeckId").value;
     const owner = document.getElementById("deckOwner").value.trim();
@@ -944,14 +1230,15 @@
     const commander_2 = document.getElementById("deckCmd2").value.trim();
     const mana_cost = buildPayloadManaCost();
     const power_level = parseInt(document.getElementById("deckPowerLevel").value, 10) || 3;
-
+    const is_active = editId ? !document.getElementById("deckInactiveCheckbox").checked : true;
+    
     const url = editId ? `/api/commanders/${editId}` : "/api/commanders";
     const method = editId ? "PUT" : "POST";
 
     const res = await fetch(url, {
       method: method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ owner, commander_1, commander_2, mana_cost, power_level })
+      body: JSON.stringify({ owner, commander_1, commander_2, mana_cost, power_level, is_active })
     });
 
     if (res.ok) {
@@ -1054,7 +1341,7 @@
   async function loadStats() {
     const minGames = document.getElementById("minGamesFilter").value || 1;
     const period = document.getElementById("timePeriodFilter").value || "all";
-    const res = await fetch(`/api/stats?min_games=${minGames}&period=${period}`);
+    const res = await fetch(`/api/stats?min_games=${minGames}&period=${period}&pod_size=${statsPodFilter}`);
     statsData = await res.json();
 
     document.getElementById("headerGameCount").textContent = `${statsData.total_games} Games`;
@@ -1161,8 +1448,14 @@
       container.innerHTML = `<div class="card">No player data available yet.</div>`;
       return;
     }
-
     const p = statsData.player_profiles[owner];
+    const comboGridCardHtml = renderColorComboGrid(
+      p.active_identities,
+      p.inactive_identities,
+      p.active_identity_counts,
+      p.inactive_identity_counts
+    );
+
     const colorNames = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green", C: "Colorless" };
     const maxCol = Math.max(...Object.values(p.color_counts), 1);
 
@@ -1251,6 +1544,8 @@
         <h2>Color Preference</h2>
         ${colorBarsHtml}
       </div>
+
+      ${comboGridCardHtml}
 
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">

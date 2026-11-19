@@ -14,3 +14,8 @@ Een zelf-gehoste, mobielvriendelijke webapplicatie voor het bijhouden van Magic:
 1. **Kopieer het `.env.example` bestand naar `.env`:**
    ```bash
    cp .env.example .env
+   ```
+2. **Open `.env` en stel zelf een sterk `INITIAL_PASSWORD` in.** Dit wordt alleen gebruikt bij de eerste initialisatie van een lege database. Voor een bestaande database blijft het opgeslagen wachtwoord actief; wijzig dat via de instellingen in de app.
+3. **Start de applicatie:**
+   ```bash
+   docker compose up -d

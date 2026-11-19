@@ -284,6 +284,45 @@ button.danger {
   box-shadow: 0 4px 12px rgba(220, 38, 38, 0.28);
 }
 
+button.trash-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 6px;
+  margin-top: 0;
+  clip-path: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--danger);
+  box-shadow: none;
+  letter-spacing: 0;
+}
+
+button.trash-icon-button:hover {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.12);
+  box-shadow: none;
+  filter: none;
+}
+
+button.trash-icon-button:focus-visible {
+  outline: 2px solid #fca5a5;
+  outline-offset: 2px;
+}
+
+button.trash-icon-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
 /* Losse Mana & Power Level Iconen */
 .icon-img {
   display: inline-block;
@@ -673,6 +712,48 @@ tr:last-child td {
   box-shadow: 0 6px 24px rgba(239, 68, 68, 0.38);
 }
 
+.commander-delete-dialog {
+  width: calc(100% - 32px);
+  max-width: 520px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #101622;
+  color: var(--text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.65);
+}
+
+.commander-delete-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.commander-delete-content {
+  padding: 20px;
+}
+
+.commander-delete-content h2 {
+  margin: 0 0 10px;
+  color: var(--gold-bright);
+}
+
+.commander-delete-details {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.commander-delete-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.commander-delete-actions button {
+  width: 100%;
+  margin: 0;
+}
+
 .wincon-tag {
   display: inline-flex;
   align-items: center;
@@ -690,4 +771,162 @@ tr:last-child td {
   cursor: pointer;
   font-weight: bold;
   padding-left: 4px;
+}
+
+/* Non-actieve commanders (uit elkaar gehaald) */
+tr.deck-inactive {
+  opacity: 0.58;
+  background: rgba(10, 14, 22, 0.45);
+}
+
+tr.deck-inactive strong {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: rgba(239, 68, 68, 0.55);
+}
+
+.inactive-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.icon-inactive {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+
+/* Status toggle box in Edit Commander */
+.status-toggle-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(12, 18, 28, 0.54);
+  border: 1px solid var(--border-subtle);
+}
+
+.status-toggle-box input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--danger);
+  cursor: pointer;
+}
+
+/* Sorteer- en filterbalk boven Decks tabel */
+.decks-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.decks-toolbar select {
+  width: auto;
+  flex: 1;
+  min-width: 120px;
+  padding: 6px 8px;
+  font-size: 0.88rem;
+}
+
+/* Toggle 3 en 4 player games */
+.pod-toggle-group {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.pod-toggle-group button {
+  flex: 1;
+  margin-top: 0;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+  background: rgba(24, 33, 46, 0.68);
+  color: var(--muted);
+  border: 1px solid var(--border-subtle);
+  box-shadow: none;
+}
+
+.pod-toggle-group button.active {
+  background: linear-gradient(180deg, #d8942d 0%, #a86410 100%);
+  color: #fff6e5;
+  border-color: rgba(242, 190, 84, 0.65);
+  box-shadow: 0 3px 10px rgba(168, 100, 16, 0.32);
+}
+
+/* Raster per speler voor kleurencombinaties */
+.combo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 7px;
+  margin-top: 10px;
+}
+
+@media (min-width: 520px) {
+  .combo-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.combo-tile {
+  border-radius: 9px;
+  padding: 8px 6px;
+  text-align: center;
+  border: 1px solid var(--border-subtle);
+  background: rgba(12, 18, 28, 0.42);
+}
+
+.combo-tile.owned {
+  background: linear-gradient(180deg, rgba(44, 122, 107, 0.24) 0%, rgba(18, 25, 36, 0.82) 100%);
+  border-color: rgba(217, 147, 44, 0.55);
+}
+
+.combo-tile.owned-inactive {
+  background: rgba(27, 37, 52, 0.52);
+  border-color: rgba(166, 159, 146, 0.35);
+  opacity: 0.78;
+}
+
+.combo-tile.missing {
+  opacity: 0.36;
+  filter: grayscale(0.75);
+}
+
+.combo-pips {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1px;
+  min-height: 22px;
+}
+
+.combo-name {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--parchment);
+  margin-top: 4px;
+}
+
+.combo-status-tag {
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-top: 1px;
 }

@@ -9,7 +9,6 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "edh-playgroup-secret-change-me")
 
 DB_PATH = os.environ.get("DB_PATH", "mtg_tracker.db")
-DEFAULT_PASSWORD = os.environ.get("POD_PASSWORD", "edh1234")
 
 
 def get_db():
@@ -35,6 +34,10 @@ def run_migrations(conn):
         cur.execute("ALTER TABLE commanders ADD COLUMN mana_cost TEXT DEFAULT ''")
     if "power_level" not in cmd_cols:
         cur.execute("ALTER TABLE commanders ADD COLUMN power_level INTEGER DEFAULT 3")
+    if "is_active" not in cmd_cols:
+        cur.execute("ALTER TABLE commanders ADD COLUMN is_active INTEGER DEFAULT 1")
+    if "is_deleted" not in cmd_cols:
+        cur.execute("ALTER TABLE commanders ADD COLUMN is_deleted INTEGER DEFAULT 0")
 
     # 2. Migraties voor 'games' (voor het geval een oudere DB kolommen mist)
     game_cols = _get_table_columns(cur, "games")
@@ -68,9 +71,13 @@ def init_db():
 
     cur.execute("SELECT id FROM auth_config WHERE id = 1")
     if not cur.fetchone():
+        initial_password = os.environ.get("INITIAL_PASSWORD")
+        if not initial_password:
+            conn.close()
+            raise RuntimeError("INITIAL_PASSWORD must be set when initializing a new database")
         cur.execute(
             "INSERT INTO auth_config (id, password_hash) VALUES (1, ?)",
-            (generate_password_hash(DEFAULT_PASSWORD),)
+            (generate_password_hash(initial_password),)
         )
 
     cur.execute("""
@@ -80,7 +87,9 @@ def init_db():
             commander_1 TEXT NOT NULL,
             commander_2 TEXT DEFAULT '',
             mana_cost TEXT DEFAULT '',
-            power_level INTEGER DEFAULT 3
+            power_level INTEGER DEFAULT 2,
+            is_active INTEGER DEFAULT 1,
+            is_deleted INTEGER DEFAULT 0
         )
     """)
 
@@ -144,6 +153,26 @@ def extract_colors(mana_cost: str) -> list[str]:
     ordered = ["W", "U", "B", "R", "G"]
     found = [c for c in ordered if c in text]
     return found if found else ["C"]
+
+
+def _commander_combination_exists(conn, owner, cmd1, cmd2, exclude_id=None):
+    query = """
+        SELECT 1
+        FROM commanders
+        WHERE TRIM(owner) = ? COLLATE NOCASE
+          AND (
+            (TRIM(commander_1) = ? COLLATE NOCASE
+             AND TRIM(COALESCE(commander_2, '')) = ? COLLATE NOCASE)
+            OR
+            (TRIM(commander_1) = ? COLLATE NOCASE
+             AND TRIM(COALESCE(commander_2, '')) = ? COLLATE NOCASE)
+          )
+    """
+    params = [owner, cmd1, cmd2, cmd2, cmd1]
+    if exclude_id is not None:
+        query += " AND id != ?"
+        params.append(exclude_id)
+    return conn.execute(query + " LIMIT 1", params).fetchone() is not None
 
 
 def get_period_cutoff(period: str) -> str | None:
@@ -224,6 +253,8 @@ def get_commanders():
         item = dict(r)
         item["colors"] = extract_colors(item.get("mana_cost", ""))
         item["power_level"] = item.get("power_level") or 3
+        item["is_active"] = 1 if item.get("is_active") is None else int(item["is_active"])
+        item["is_deleted"] = 1 if item.get("is_deleted") is None else int(item["is_deleted"])
         result.append(item)
     return jsonify(result)
 
@@ -237,6 +268,8 @@ def create_commander():
     cmd2 = (data.get("commander_2") or "").strip()
     mana_cost = (data.get("mana_cost") or "").strip()
     power_level = int(data.get("power_level") or 3)
+    is_active = 1 if data.get("is_active", True) else 0
+    
 
     if not owner or not cmd1:
         return jsonify({"error": "Owner en Commander Name zijn verplicht"}), 400
@@ -244,6 +277,10 @@ def create_commander():
         power_level = 3
 
     conn = get_db()
+    if _commander_combination_exists(conn, owner, cmd1, cmd2):
+        conn.close()
+        return jsonify({"error": "Deze speler heeft deze commandercombinatie al geregistreerd"}), 409
+
     cur = conn.cursor()
     cur.execute(
         """
@@ -271,6 +308,7 @@ def update_commander(cmd_id):
     cmd2 = (data.get("commander_2") or "").strip()
     mana_cost = (data.get("mana_cost") or "").strip()
     power_level = int(data.get("power_level") or 3)
+    is_active = 1 if data.get("is_active", True) else 0
 
     if not owner or not cmd1:
         return jsonify({"error": "Owner en Commander Name zijn verplicht"}), 400
@@ -278,18 +316,25 @@ def update_commander(cmd_id):
         power_level = 3
 
     conn = get_db()
-    existing = conn.execute("SELECT id FROM commanders WHERE id = ?", (cmd_id,)).fetchone()
+    existing = conn.execute(
+        "SELECT id FROM commanders WHERE id = ? AND COALESCE(is_deleted, 0) = 0",
+        (cmd_id,)
+    ).fetchone()
     if not existing:
         conn.close()
         return jsonify({"error": "Commander niet gevonden"}), 404
 
+    if _commander_combination_exists(conn, owner, cmd1, cmd2, exclude_id=cmd_id):
+        conn.close()
+        return jsonify({"error": "Deze speler heeft deze commandercombinatie al geregistreerd"}), 409
+
     conn.execute(
         """
         UPDATE commanders
-        SET owner = ?, commander_1 = ?, commander_2 = ?, mana_cost = ?, power_level = ?
+        SET owner = ?, commander_1 = ?, commander_2 = ?, mana_cost = ?, power_level = ?, is_active = ?
         WHERE id = ?
         """,
-        (owner, cmd1, cmd2, mana_cost, power_level, cmd_id)
+        (owner, cmd1, cmd2, mana_cost, power_level, is_active, cmd_id)
     )
     conn.commit()
     row = conn.execute("SELECT * FROM commanders WHERE id = ?", (cmd_id,)).fetchone()
@@ -298,6 +343,61 @@ def update_commander(cmd_id):
     item = dict(row)
     item["colors"] = extract_colors(item.get("mana_cost", ""))
     return jsonify(item)
+
+
+@app.route("/api/commanders/<int:cmd_id>/usage", methods=["GET"])
+@login_required
+def get_commander_usage(cmd_id):
+    conn = get_db()
+    commander = conn.execute(
+        "SELECT id FROM commanders WHERE id = ? AND COALESCE(is_deleted, 0) = 0",
+        (cmd_id,)
+    ).fetchone()
+    if not commander:
+        conn.close()
+        return jsonify({"error": "Commander niet gevonden"}), 404
+
+    row = conn.execute(
+        "SELECT COUNT(DISTINCT game_id) AS games_count FROM game_participants WHERE commander_id = ?",
+        (cmd_id,)
+    ).fetchone()
+    conn.close()
+    return jsonify({"games_count": row["games_count"]})
+
+
+@app.route("/api/commanders/<int:cmd_id>", methods=["DELETE"])
+@login_required
+def delete_commander(cmd_id):
+    data = request.get_json(silent=True) or {}
+    action = data.get("action")
+    if action not in {"delete_with_stats", "delete_keep_stats", "inactive"}:
+        return jsonify({"error": "Ongeldige verwijderactie"}), 400
+
+    conn = get_db()
+    commander = conn.execute(
+        "SELECT id FROM commanders WHERE id = ? AND COALESCE(is_deleted, 0) = 0",
+        (cmd_id,)
+    ).fetchone()
+    if not commander:
+        conn.close()
+        return jsonify({"error": "Commander niet gevonden"}), 404
+
+    games_count = conn.execute(
+        "SELECT COUNT(DISTINCT game_id) FROM game_participants WHERE commander_id = ?",
+        (cmd_id,)
+    ).fetchone()[0]
+
+    if action == "delete_with_stats":
+        conn.execute("DELETE FROM game_participants WHERE commander_id = ?", (cmd_id,))
+        conn.execute("DELETE FROM commanders WHERE id = ?", (cmd_id,))
+    elif action == "delete_keep_stats":
+        conn.execute("UPDATE commanders SET is_deleted = 1 WHERE id = ?", (cmd_id,))
+    else:
+        conn.execute("UPDATE commanders SET is_active = 0 WHERE id = ?", (cmd_id,))
+
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "games_count": games_count})
 
 
 @app.route("/api/win_conditions", methods=["GET"])
@@ -461,7 +561,7 @@ def get_stats():
     min_games = max(1, int(request.args.get("min_games") or 1))
     period = request.args.get("period") or "all"
     cutoff = get_period_cutoff(period)
-
+    
     conn = get_db()
     if cutoff:
         games = conn.execute(
@@ -475,14 +575,51 @@ def get_stats():
     cmd_map = {r["id"]: dict(r) for r in cmd_rows}
 
     game_ids = [g["id"] for g in games]
-    participants = []
+    all_participants = []
     if game_ids:
         placeholders = ",".join("?" for _ in game_ids)
-        participants = conn.execute(
+        all_participants = conn.execute(
             f"SELECT * FROM game_participants WHERE game_id IN ({placeholders}) ORDER BY seat_order ASC",
             game_ids
         ).fetchall()
     conn.close()
+
+    pod_size = request.args.get("pod_size") or "all"
+    raw_parts_by_game = {}
+    for p in all_participants:
+        raw_parts_by_game.setdefault(p["game_id"], []).append(dict(p))
+
+    if pod_size in ("3", "4"):
+        target_size = int(pod_size)
+        games = [g for g in games if len(raw_parts_by_game.get(g["id"], [])) == target_size]
+
+    game_ids = [g["id"] for g in games]
+    valid_game_set = set(game_ids)
+    participants = [p for p in all_participants if p["game_id"] in valid_game_set]
+
+    total_games = len(games)
+    avg_turns = round(sum(g["turns"] for g in games) / total_games, 1) if total_games else 0
+    game_turns_map = {g["id"]: g["turns"] for g in games}
+
+    owner_registered_identities = {}
+    for c in cmd_map.values():
+        if c.get("is_deleted"):
+            continue
+        owner = c["owner"]
+        id_key = "".join(extract_colors(c.get("mana_cost", "")))
+        is_act = 1 if c.get("is_active") is None else int(c["is_active"])
+        entry = owner_registered_identities.setdefault(owner, {
+            "active": set(),
+            "inactive": set(),
+            "active_counts": {},
+            "inactive_counts": {}
+        })
+        if is_act == 1:
+            entry["active"].add(id_key)
+            entry["active_counts"][id_key] = entry["active_counts"].get(id_key, 0) + 1
+        else:
+            entry["inactive"].add(id_key)
+            entry["inactive_counts"][id_key] = entry["inactive_counts"].get(id_key, 0) + 1
 
     total_games = len(games)
     avg_turns = round(sum(g["turns"] for g in games) / total_games, 1) if total_games else 0
@@ -582,7 +719,13 @@ def get_stats():
         for pc in p_entry["commanders"].values():
             pc_wr = round((pc["wins"] / pc["games_played"]) * 100, 1) if pc["games_played"] else 0
             p_cmds.append({**pc, "winrate": pc_wr})
-
+        
+        id_info = owner_registered_identities.get(owner, {
+            "active": set(),
+            "inactive": set(),
+            "active_counts": {},
+            "inactive_counts": {}
+        })
         player_profiles[owner] = {
             "owner": owner,
             "games_played": gp,
@@ -591,6 +734,10 @@ def get_stats():
             "avg_win_turns": avg_wt,
             "favorite_wincon": fav_wc,
             "color_counts": p_entry["color_counts"],
+            "active_identities": sorted(id_info["active"]),
+            "inactive_identities": sorted(id_info["inactive"] - id_info["active"]),
+            "active_identity_counts": id_info["active_counts"],
+            "inactive_identity_counts": id_info["inactive_counts"],
             "commanders": p_cmds
         }
 
