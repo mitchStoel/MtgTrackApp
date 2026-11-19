@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=20261119-3" />
+  <link rel="stylesheet" href="/static/css/style.css?v=20261119-5" />
 </head>
 <body>
 
@@ -81,7 +81,7 @@
           <input type="date" id="gameDate" />
         </div>
         <div style="flex:1;">
-          <label>How was the game won?</label>
+          <label>Wincon</label>
           <select id="gameWincon"></select>
         </div>
       </div>
@@ -129,25 +129,19 @@
         <input type="checkbox" id="deckInactiveCheckbox" />
       </div>
 
-      <label>Mana Cost</label>
-      <input type="text" id="deckMana" placeholder="Wordt automatisch gevuld via Scryfall, bijv. {G}{W}{U}{B}" oninput="syncColorIdentityFromManaInput()" />
-      <div id="manaCostIconsPreview" style="margin-top:6px; min-height:22px;"></div>
-
-      <label>Color Identity</label>
-      <input type="hidden" id="deckColorIdentity" value="" />
-      <div class="mana-helper">
-        <button type="button" class="pip-btn" title="White" onclick="toggleIdentityColor('W')" id="manaBtn_W"></button>
-        <button type="button" class="pip-btn" title="Blue" onclick="toggleIdentityColor('U')" id="manaBtn_U"></button>
-        <button type="button" class="pip-btn" title="Black" onclick="toggleIdentityColor('B')" id="manaBtn_B"></button>
-        <button type="button" class="pip-btn" title="Red" onclick="toggleIdentityColor('R')" id="manaBtn_R"></button>
-        <button type="button" class="pip-btn" title="Green" onclick="toggleIdentityColor('G')" id="manaBtn_G"></button>
-        <button type="button" class="clear-btn" onclick="clearManaAndIdentity()">Clear</button>
-      </div>
-      <div class="meta-pill-row">
-        <span style="color:var(--muted);">Actieve Color Identity:</span>
-        <span id="activeColorIdentityPreview" style="display:inline-flex; align-items:center; gap:2px;">
-          <em style="color:var(--muted); font-size:0.88rem;">Colorless / Geen gekozen</em>
-        </span>
+      <div class="mana-identity-row">
+        <div class="mana-identity-field">
+          <label for="deckMana">Mana Cost</label>
+          <input type="text" id="deckMana" readonly placeholder="Select a commander" />
+          <div id="manaCostIconsPreview" class="mana-cost-icons-preview"></div>
+        </div>
+        <div class="mana-identity-field">
+          <label>Color Identity</label>
+          <input type="hidden" id="deckColorIdentity" value="" />
+          <div id="activeColorIdentityPreview" class="color-identity-preview">
+            <em>Colorless / Geen gekozen</em>
+          </div>
+        </div>
       </div>
 
       <label style="margin-top:14px;">Alternative Commanders (from the 99)</label>
@@ -263,6 +257,8 @@
 
       <div class="card">
         <h2>Player Leaderboard</h2>
+        <p class="player-wins-caption">Share of total wins in the selected filters</p>
+        <div id="playerWinsPieChart" class="player-wins-chart"></div>
         <table>
           <thead>
             <tr>
@@ -407,6 +403,9 @@
   let selectedAlternativeCards = [];
 
   const WUBRG_ORDER = ["W", "U", "B", "R", "G"];
+  const PLAYER_WIN_CHART_COLORS = [
+    "#02ABA1", "#6B27B4", "#3A42A7", "#F88802"
+  ];
 
   let statsPodFilter = "all";
 
@@ -576,13 +575,6 @@
   function selectPowerLevel(lvl) {
     document.getElementById("deckPowerLevel").value = lvl;
     renderPowerSelector();
-  }
-
-  function initManaButtons() {
-    WUBRG_ORDER.forEach(col => {
-      const btn = document.getElementById(`manaBtn_${col}`);
-      if (btn) btn.innerHTML = getManaImgHtml(col, 28);
-    });
   }
 
   function updateManaCostPreview() {
@@ -796,27 +788,6 @@
     preview.innerHTML = renderPips(colors, 22);
   }
 
-  function toggleIdentityColor(col) {
-    const currentStr = document.getElementById("deckColorIdentity").value || "";
-    const currentSet = new Set(currentStr.split("").filter(Boolean));
-    if (currentSet.has(col)) {
-      currentSet.delete(col);
-    } else {
-      currentSet.add(col);
-    }
-    const nextColors = WUBRG_ORDER.filter(c => currentSet.has(c));
-    setColorIdentity(nextColors);
-  }
-
-  function syncColorIdentityFromManaInput() {
-    updateManaCostPreview();
-    const val = (document.getElementById("deckMana").value || "").toUpperCase();
-    const found = WUBRG_ORDER.filter(col => val.includes(col));
-    if (found.length) {
-      setColorIdentity(found);
-    }
-  }
-
   function clearManaAndIdentity() {
     document.getElementById("deckMana").value = "";
     selectedScryfallCards[1] = null;
@@ -880,6 +851,149 @@
     document.getElementById("subBtnPlayer").classList.toggle("active", view === "player");
     document.getElementById("stats-total").style.display = view === "total" ? "block" : "none";
     document.getElementById("stats-player").style.display = view === "player" ? "block" : "none";
+  }
+
+  function openPlayerProfile(owner) {
+    const select = document.getElementById("playerProfileSelect");
+    const option = Array.from(select.options).find(item => item.value === owner);
+    if (!option) return;
+
+    select.value = owner;
+    switchStatsView("player");
+    renderPlayerProfile();
+  }
+
+  function renderPlayerWinsPie(players) {
+    const container = document.getElementById("playerWinsPieChart");
+    container.replaceChildren();
+
+    if (!players.length) {
+      const empty = document.createElement("div");
+      empty.className = "player-wins-empty";
+      empty.textContent = "No player wins in this period.";
+      container.appendChild(empty);
+      return;
+    }
+
+    const svgNamespace = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNamespace, "svg");
+    const center = 100;
+    const radius = 88;
+    const totalWins = players.reduce((sum, player) => sum + player.wins, 0);
+    const playerColors = new Map(
+      players.map((player, index) => [
+        player.owner,
+        PLAYER_WIN_CHART_COLORS[index % PLAYER_WIN_CHART_COLORS.length]
+      ])
+    );
+    svg.setAttribute("viewBox", "0 0 200 200");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", `Player share of ${totalWins} total wins`);
+
+    const clickableSlice = (element, player, percentage) => {
+      const color = playerColors.get(player.owner);
+      const openProfile = () => openPlayerProfile(player.owner);
+      element.setAttribute("fill", color);
+      element.setAttribute("stroke", "#0b0f17");
+      element.setAttribute("stroke-width", "2");
+      element.setAttribute("tabindex", "0");
+      element.setAttribute("role", "button");
+      element.setAttribute(
+        "aria-label",
+        `${player.owner}: ${player.wins} wins, ${percentage.toFixed(1)}% of total wins. Open player profile.`
+      );
+      element.classList.add("player-wins-slice");
+      element.addEventListener("click", openProfile);
+      element.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openProfile();
+        }
+      });
+
+      const title = document.createElementNS(svgNamespace, "title");
+      title.textContent = `${player.owner}: ${player.wins} wins (${percentage.toFixed(1)}%)`;
+      element.appendChild(title);
+    };
+
+    const activePlayers = players.filter(player => player.wins > 0);
+    if (totalWins === 0) {
+      const emptyCircle = document.createElementNS(svgNamespace, "circle");
+      emptyCircle.setAttribute("cx", center);
+      emptyCircle.setAttribute("cy", center);
+      emptyCircle.setAttribute("r", radius);
+      emptyCircle.setAttribute("fill", "#1b2534");
+      emptyCircle.setAttribute("stroke", "#4b5563");
+      emptyCircle.setAttribute("stroke-width", "2");
+      svg.appendChild(emptyCircle);
+
+      const emptyText = document.createElementNS(svgNamespace, "text");
+      emptyText.setAttribute("x", center);
+      emptyText.setAttribute("y", center);
+      emptyText.setAttribute("text-anchor", "middle");
+      emptyText.setAttribute("dominant-baseline", "middle");
+      emptyText.setAttribute("fill", "#a69f92");
+      emptyText.textContent = "No wins";
+      svg.appendChild(emptyText);
+    } else if (activePlayers.length === 1) {
+      const player = activePlayers[0];
+      const circle = document.createElementNS(svgNamespace, "circle");
+      circle.setAttribute("cx", center);
+      circle.setAttribute("cy", center);
+      circle.setAttribute("r", radius);
+      clickableSlice(circle, player, 100);
+      svg.appendChild(circle);
+    } else {
+      let startAngle = -Math.PI / 2;
+      activePlayers.forEach(player => {
+        const percentage = (player.wins / totalWins) * 100;
+        const endAngle = startAngle + (percentage / 100) * Math.PI * 2;
+        const startX = center + radius * Math.cos(startAngle);
+        const startY = center + radius * Math.sin(startAngle);
+        const endX = center + radius * Math.cos(endAngle);
+        const endY = center + radius * Math.sin(endAngle);
+        const largeArc = percentage > 50 ? 1 : 0;
+        const path = document.createElementNS(svgNamespace, "path");
+        path.setAttribute(
+          "d",
+          `M ${center} ${center} L ${startX} ${startY} A ${radius} ${radius} 0 ${largeArc} 1 ${endX} ${endY} Z`
+        );
+        clickableSlice(path, player, percentage);
+        svg.appendChild(path);
+        startAngle = endAngle;
+      });
+    }
+
+    const pie = document.createElement("div");
+    pie.className = "player-wins-pie";
+    pie.appendChild(svg);
+    const legend = document.createElement("div");
+    legend.className = "player-wins-legend";
+
+    players.forEach(player => {
+      const percentage = totalWins ? (player.wins / totalWins) * 100 : 0;
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "player-wins-legend-item";
+      item.addEventListener("click", () => openPlayerProfile(player.owner));
+
+      const swatch = document.createElement("span");
+      swatch.className = "player-wins-legend-swatch";
+      swatch.style.backgroundColor = playerColors.get(player.owner);
+
+      const name = document.createElement("span");
+      name.className = "player-wins-legend-name";
+      name.textContent = player.owner;
+
+      const value = document.createElement("span");
+      value.className = "player-wins-legend-value";
+      value.textContent = `${player.wins} ${player.wins === 1 ? "win" : "wins"} · ${percentage.toFixed(1)}%`;
+
+      item.append(swatch, name, value);
+      legend.appendChild(item);
+    });
+
+    container.append(pie, legend);
   }
 
   async function checkAuth() {
@@ -1525,14 +1639,21 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
     document.getElementById("kpiTotalGames").textContent = statsData.total_games;
     document.getElementById("kpiAvgTurns").textContent = statsData.avg_turns;
 
-    document.getElementById("playerLeaderboardBody").innerHTML = statsData.player_stats.map(p => `
+    const leaderboard = document.getElementById("playerLeaderboardBody");
+    leaderboard.innerHTML = statsData.player_stats.map((p, index) => `
       <tr>
-        <td><strong>${p.owner}</strong></td>
+        <td><button type="button" class="player-leaderboard-link" data-player-index="${index}">${p.owner}</button></td>
         <td>${p.games_played}</td>
         <td>${p.wins}</td>
         <td><strong>${p.winrate}%</strong></td>
       </tr>
     `).join("") || `<tr><td colspan="4" style="color:var(--muted);">No games in this period.</td></tr>`;
+    leaderboard.querySelectorAll(".player-leaderboard-link").forEach(button => {
+      button.addEventListener("click", () => {
+        const player = statsData.player_stats[Number(button.dataset.playerIndex)];
+        if (player) openPlayerProfile(player.owner);
+      });
+    });
 
     document.getElementById("topPlayedBody").innerHTML = statsData.top_played.map(c => `
       <tr>
@@ -1613,6 +1734,7 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
     select.innerHTML = owners.map(o => `<option value="${o}">${o}</option>`).join("");
     if (owners.includes(currentSelection)) select.value = currentSelection;
     renderPlayerProfile();
+    renderPlayerWinsPie(statsData.player_stats);
   }
 
   function setPlayerSort(column) {
@@ -1748,7 +1870,8 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
           <h2 style="margin:0;">${p.owner}'s Commanders</h2>
-          <input type="text" placeholder="Zoek op decknaam..." value="${playerDeckSearch}" 
+          <input type="text" placeholder="Zoek op decknaam..." value="${playerDeckSearch}"
+                 autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
                  oninput="handlePlayerSearchInput(this.value)" 
                  style="width:auto; flex:1; min-width:160px; max-width:220px; padding:6px 10px; font-size:0.92rem;" />
         </div>
@@ -1784,7 +1907,6 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
 
   (async function init() {
     setTodayDate();
-    initManaButtons();
     renderPowerSelector();
     await checkAuth();
     await loadWinConditions();

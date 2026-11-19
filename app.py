@@ -918,7 +918,8 @@ def get_stats():
             pc_entry["wins"] += 1
 
         actual_key = actual_alternative_id or 0
-        actual_entry = p_entry["actual_commanders"].setdefault(actual_key, {
+        actual_deck_key = (c["id"], actual_key)
+        actual_entry = p_entry["actual_commanders"].setdefault(actual_deck_key, {
             "deck_id": c["id"],
             "deck_name": disp_name,
             "actual_commander": actual_name,

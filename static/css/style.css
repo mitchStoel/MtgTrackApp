@@ -447,45 +447,44 @@ button.edit-icon-button svg {
   display: block;
 }
 
-.mana-helper {
+.mana-identity-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mana-identity-field {
+  min-width: 0;
+}
+
+.mana-identity-field input[readonly] {
+  cursor: default;
+}
+
+.mana-cost-icons-preview {
   display: flex;
-  gap: 8px;
-  margin-top: 8px;
   flex-wrap: wrap;
   align-items: center;
+  gap: 2px;
+  min-height: 22px;
+  margin-top: 6px;
 }
 
-.mana-helper button.pip-btn {
-  width: 36px;
-  height: 36px;
-  margin: 0;
-  padding: 0;
-  border-radius: 50%;
-  clip-path: none;
-  background: rgba(12, 18, 28, 0.45);
-  border: 1px solid rgba(217, 147, 44, 0.22);
-  display: inline-flex;
+.color-identity-preview {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  box-shadow: none;
-  transition: transform 0.14s ease, border-color 0.16s ease;
-}
-
-.mana-helper button.pip-btn:hover {
-  transform: scale(1.08);
-  border-color: var(--gold-bright);
-  box-shadow: none;
-}
-
-.mana-helper button.clear-btn {
-  width: auto;
-  margin: 0 0 0 auto;
-  padding: 6px 14px;
-  font-size: 0.76rem;
-  background: rgba(27, 37, 52, 0.72);
-  color: var(--text);
+  gap: 2px;
+  min-height: 42px;
+  padding: 8px 10px;
   border: 1px solid var(--border-subtle);
-  box-shadow: none;
+  border-radius: 8px;
+  background: rgba(12, 18, 28, 0.52);
+}
+
+.color-identity-preview em {
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
 /* Power Level Selector Grid */
@@ -765,6 +764,133 @@ nav.bottom-nav button.active {
   margin-top: 2px;
 }
 
+.player-wins-caption {
+  margin: -4px 0 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.player-wins-chart {
+  display: grid;
+  grid-template-columns: minmax(150px, 200px) minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.player-wins-pie {
+  width: 100%;
+  max-width: 200px;
+  margin: 0 auto;
+}
+
+.player-wins-pie svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.player-wins-slice {
+  cursor: pointer;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.player-wins-slice:hover {
+  filter: brightness(1.15);
+}
+
+.player-wins-slice:focus-visible {
+  stroke: var(--gold-bright);
+  stroke-width: 4;
+  outline: none;
+}
+
+.player-wins-legend {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+button.player-wins-legend-item {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  clip-path: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: rgba(12, 18, 28, 0.48);
+  color: var(--text);
+  box-shadow: none;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-align: left;
+}
+
+button.player-wins-legend-item:hover {
+  border-color: var(--border);
+  background: rgba(27, 37, 52, 0.72);
+  box-shadow: none;
+  filter: none;
+}
+
+.player-wins-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.player-wins-legend-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--parchment);
+}
+
+.player-wins-legend-value {
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.player-wins-empty {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  text-align: center;
+}
+
+button.player-leaderboard-link {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  clip-path: none;
+  border: 0;
+  background: transparent;
+  color: var(--parchment);
+  box-shadow: none;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-align: left;
+}
+
+button.player-leaderboard-link:hover {
+  color: var(--gold-bright);
+  box-shadow: none;
+  filter: none;
+  text-decoration: underline;
+}
+
+button.player-leaderboard-link:focus-visible,
+button.player-wins-legend-item:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -1039,6 +1165,15 @@ tr.deck-inactive strong {
     grid-column: 2;
     grid-row: 1;
     max-width: none;
+  }
+
+  .player-wins-chart {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .player-wins-pie {
+    max-width: 170px;
   }
 
   .registered-decks-table {
