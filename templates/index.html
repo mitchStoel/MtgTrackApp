@@ -13,7 +13,10 @@
 
 <div id="loginOverlay" style="display:none;">
   <div id="loginCard">
-    <h2 style="color:var(--gold-bright); margin-bottom:8px;">⚔️ EDH Playgroup</h2>
+    <h2 class="login-brand" style="color:var(--gold-bright); margin-bottom:8px;">
+      <img src="/static/icons/logo.png" alt="" class="login-brand-logo" />
+      EDH Playgroup
+    </h2>
     <p style="font-size:0.98rem; color:var(--muted); margin-bottom:16px;">Voer het pod-wachtwoord in om toegang te krijgen tot de kronieken.</p>
     <form onsubmit="handleLogin(event)">
       <input type="password" id="loginPasswordInput" placeholder="Wachtwoord..." required style="margin-bottom:12px;" />
@@ -25,7 +28,8 @@
 
 <header>
   <div class="brand-title">
-    <h1>⚔️ EDH <span class="brand-accent">Playgroup</span></h1>
+    <img src="/static/icons/logo.png" alt="" class="brand-logo" />
+    <h1>EDH <span class="brand-accent">Playgroup</span></h1>
   </div>
   <div style="display:flex; align-items:center; gap:10px;">
     <span style="font-size:0.95rem; color:var(--muted);" id="headerGameCount">0 Games</span>
@@ -102,13 +106,13 @@
       <input type="text" id="deckOwner" list="ownerSuggestions" placeholder="e.g. Alex" />
       <datalist id="ownerSuggestions"></datalist>
 
-      <label>Commander Name (Scryfall Search)</label>
+      <label>Main Commander (Scryfall Search)</label>
       <div class="autocomplete-wrap">
         <input type="text" id="deckCmd1" autocomplete="off" placeholder="Typ om te zoeken op Scryfall, bijv. Atraxa..." oninput="onCommanderInput(1, this.value)" />
         <div id="cmdSuggestions_1" class="autocomplete-list"></div>
       </div>
 
-      <label>Partner / Background (Optional)</label>
+      <label>Partner / Background (Optional; part of the main choice)</label>
       <div class="autocomplete-wrap">
         <input type="text" id="deckCmd2" autocomplete="off" placeholder="Zoek partner/background of laat leeg..." oninput="onCommanderInput(2, this.value)" />
         <div id="cmdSuggestions_2" class="autocomplete-list"></div>
@@ -145,6 +149,14 @@
           <em style="color:var(--muted); font-size:0.88rem;">Colorless / Geen gekozen</em>
         </span>
       </div>
+
+      <label style="margin-top:14px;">Alternative Commanders (from the 99)</label>
+      <div class="form-hint">These stay alternatives and never replace the main commander, even when played more often. Choose the commander used for each game when logging it.</div>
+      <div class="autocomplete-wrap">
+        <input type="text" id="alternativeCommanderSearch" autocomplete="off" placeholder="Search alternative commander on Scryfall..." oninput="onCommanderInput(3, this.value)" />
+        <div id="cmdSuggestions_3" class="autocomplete-list"></div>
+      </div>
+      <div id="alternativeCommanderList" class="alternative-commander-list"></div>
 
       <label style="margin-top:14px;">Power Level (1 - 5)</label>
       <input type="hidden" id="deckPowerLevel" value="3" />
@@ -302,6 +314,23 @@
       </div>
 
       <div class="card">
+        <h2>Actual Commander Stats by Deck</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Deck</th>
+              <th>Player</th>
+              <th>Commander Played</th>
+              <th>Games</th>
+              <th>Wins</th>
+              <th>Winrate</th>
+            </tr>
+          </thead>
+          <tbody id="actualCommanderStatsBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card">
         <h2>Seat Order Winrate</h2>
         <table>
           <thead>
@@ -374,9 +403,10 @@
   let playerDeckSortBy = "games_played";
   let playerDeckSortDir = "desc";
 
-  let selectedScryfallCards = { 1: null, 2: null };
-  let scryfallTimers = { 1: null, 2: null };
-  let scryfallResultsCache = { 1: [], 2: [] };
+  let selectedScryfallCards = { 1: null, 2: null, 3: null };
+  let scryfallTimers = { 1: null, 2: null, 3: null };
+  let scryfallResultsCache = { 1: [], 2: [], 3: [] };
+  let selectedAlternativeCards = [];
 
   const WUBRG_ORDER = ["W", "U", "B", "R", "G"];
 
@@ -627,13 +657,52 @@
     const card = scryfallResultsCache[slot][idx];
     if (!card) return;
 
-    const inputEl = document.getElementById(slot === 1 ? "deckCmd1" : "deckCmd2");
+    const inputId = slot === 1
+      ? "deckCmd1"
+      : slot === 2
+        ? "deckCmd2"
+        : "alternativeCommanderSearch";
+    const inputEl = document.getElementById(inputId);
     const listEl = document.getElementById(`cmdSuggestions_${slot}`);
 
     inputEl.value = card.name;
     listEl.style.display = "none";
 
     const mana = card.mana_cost || (card.card_faces && card.card_faces[0] ? card.card_faces[0].mana_cost : "") || "";
+    if (slot === 3) {
+      const identity = card.color_identity || [];
+      const mainIdentity = new Set(document.getElementById("deckColorIdentity").value || "");
+      if (identity.some(color => !mainIdentity.has(color))) {
+        showToast(`${card.name} does not fit the deck's color identity.`, true);
+        inputEl.value = "";
+        return;
+      }
+
+      const normalizedName = card.name.toLowerCase();
+      const isMainCommander = [1, 2].some(mainSlot =>
+        (selectedScryfallCards[mainSlot]?.name || document.getElementById(`deckCmd${mainSlot}`).value)
+          .toLowerCase() === normalizedName
+      );
+      const alreadyAdded = selectedAlternativeCards.some(alternative =>
+        alternative.scryfall_id === card.id || alternative.name.toLowerCase() === normalizedName
+      );
+      if (isMainCommander || alreadyAdded) {
+        showToast(`${card.name} is already listed for this deck.`, true);
+        inputEl.value = "";
+        return;
+      }
+
+      selectedAlternativeCards.push({
+        name: card.name,
+        scryfall_id: card.id,
+        color_identity: identity
+      });
+      selectedScryfallCards[slot] = null;
+      inputEl.value = "";
+      renderAlternativeCards();
+      return;
+    }
+
     selectedScryfallCards[slot] = {
       name: card.name,
       mana_cost: mana,
@@ -641,6 +710,52 @@
     };
 
     applyCombinedScryfallData();
+  }
+
+  function renderAlternativeCards() {
+    const container = document.getElementById("alternativeCommanderList");
+    container.replaceChildren();
+
+    selectedAlternativeCards.forEach((alternative, index) => {
+      const item = document.createElement("div");
+      item.className = "alternative-commander-item";
+
+      const name = document.createElement("span");
+      name.textContent = alternative.name;
+      item.appendChild(name);
+
+      const identity = document.createElement("span");
+      identity.className = "alternative-commander-identity";
+      identity.innerHTML = renderPips(alternative.color_identity, 18);
+      item.appendChild(identity);
+
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "remove-alternative-button";
+      removeButton.setAttribute("aria-label", `Remove ${alternative.name}`);
+      removeButton.textContent = "×";
+      removeButton.onclick = () => removeAlternativeCard(index);
+      item.appendChild(removeButton);
+
+      container.appendChild(item);
+    });
+  }
+
+  function removeAlternativeCard(index) {
+    selectedAlternativeCards.splice(index, 1);
+    renderAlternativeCards();
+  }
+
+  function validateAlternativeIdentities() {
+    const mainIdentity = new Set(document.getElementById("deckColorIdentity").value || "");
+    const invalidAlternative = selectedAlternativeCards.find(alternative =>
+      alternative.color_identity.some(color => !mainIdentity.has(color))
+    );
+    if (invalidAlternative) {
+      showToast(`${invalidAlternative.name} does not fit the deck's color identity.`, true);
+      return false;
+    }
+    return true;
   }
 
   function applyCombinedScryfallData() {
@@ -733,6 +848,7 @@
     if (!e.target.closest(".autocomplete-wrap")) {
       document.getElementById("cmdSuggestions_1").style.display = "none";
       document.getElementById("cmdSuggestions_2").style.display = "none";
+      document.getElementById("cmdSuggestions_3").style.display = "none";
     }
   });
 
@@ -913,9 +1029,15 @@
     document.getElementById("deckOwner").value = deck.owner;
     document.getElementById("deckCmd1").value = deck.commander_1;
     document.getElementById("deckCmd2").value = deck.commander_2 || "";
+    document.getElementById("alternativeCommanderSearch").value = "";
     document.getElementById("deckMana").value = deck.mana_cost;
     updateManaCostPreview();
     setColorIdentity(deck.colors || []);
+    selectedAlternativeCards = (deck.alternatives || []).map(alternative => ({
+      ...alternative,
+      color_identity: [...alternative.color_identity]
+    }));
+    renderAlternativeCards();
     selectPowerLevel(deck.power_level || 3);
 
     document.getElementById("deckStatusBox").style.display = "flex";
@@ -984,6 +1106,13 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
     document.getElementById("deckOwner").value = "";
     document.getElementById("deckCmd1").value = "";
     document.getElementById("deckCmd2").value = "";
+    document.getElementById("alternativeCommanderSearch").value = "";
+    selectedAlternativeCards = [];
+    selectedScryfallCards[3] = null;
+    scryfallResultsCache[3] = [];
+    document.getElementById("cmdSuggestions_3").style.display = "none";
+    document.getElementById("cmdSuggestions_3").innerHTML = "";
+    renderAlternativeCards();
     clearManaAndIdentity();
     selectPowerLevel(3);
 
@@ -1044,6 +1173,7 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
         if (selectedCmdId) {
           cmdSelect.value = String(selectedCmdId);
         }
+    populatePlayedCommander(seat);
     }
 
   function onSeatPlayerChange(seat) {
@@ -1083,9 +1213,13 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
               Winner 🏆
             </label>
           </div>
-          <select id="seatCmd_${seat}" disabled>
+          <select id="seatCmd_${seat}" disabled onchange="populatePlayedCommander(${seat})">
             <option value="">-- Select Player first --</option>
           </select>
+          <div id="playedCommanderWrap_${seat}" style="display:none; margin-top:8px;">
+            <label for="seatPlayedCommander_${seat}" style="margin-top:0;">Commander actually played</label>
+            <select id="seatPlayedCommander_${seat}"></select>
+          </div>
         </div>
       `;
     }
@@ -1100,8 +1234,26 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
           playerSel.value = ownerName;
         }
         populateSeatCommanders(p.seat_order, ownerName, p.commander_id);
+        populatePlayedCommander(p.seat_order, p.played_alternative_id);
       });
     }
+  }
+
+  function populatePlayedCommander(seat, selectedAlternativeId = "") {
+    const deckId = document.getElementById(`seatCmd_${seat}`).value;
+    const choice = document.getElementById(`seatPlayedCommander_${seat}`);
+    const wrapper = document.getElementById(`playedCommanderWrap_${seat}`);
+    const deck = commanders.find(c => String(c.id) === String(deckId));
+    const alternatives = deck ? deck.alternatives || [] : [];
+
+    choice.innerHTML = deck
+      ? `<option value="">${getDeckDisplayName(deck)} (Main commander)</option>` +
+        alternatives.map(alternative =>
+          `<option value="${alternative.id}">${alternative.name} (Alternative)</option>`
+        ).join("")
+      : "";
+    wrapper.style.display = alternatives.length ? "block" : "none";
+    choice.value = selectedAlternativeId ? String(selectedAlternativeId) : "";
   }
 
   function highlightWinner(winningSeat) {
@@ -1231,6 +1383,7 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
     const mana_cost = buildPayloadManaCost();
     const power_level = parseInt(document.getElementById("deckPowerLevel").value, 10) || 3;
     const is_active = editId ? !document.getElementById("deckInactiveCheckbox").checked : true;
+    if (!validateAlternativeIdentities()) return;
     
     const url = editId ? `/api/commanders/${editId}` : "/api/commanders";
     const method = editId ? "PUT" : "POST";
@@ -1238,7 +1391,15 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
     const res = await fetch(url, {
       method: method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ owner, commander_1, commander_2, mana_cost, power_level, is_active })
+      body: JSON.stringify({
+        owner,
+        commander_1,
+        commander_2,
+        mana_cost,
+        power_level,
+        is_active,
+        alternatives: selectedAlternativeCards
+      })
     });
 
     if (res.ok) {
@@ -1248,6 +1409,9 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
       } else {
         document.getElementById("deckCmd1").value = "";
         document.getElementById("deckCmd2").value = "";
+        document.getElementById("alternativeCommanderSearch").value = "";
+        selectedAlternativeCards = [];
+        renderAlternativeCards();
         clearManaAndIdentity();
         selectPowerLevel(3);
         showToast("Commander registered!");
@@ -1256,6 +1420,14 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
     } else {
       const err = await res.json();
       showToast(err.error || "Error saving deck", true);
+      if (editId) {
+        await loadCommanders();
+        const deck = commanders.find(c => c.id === Number(editId));
+        if (deck) {
+          selectedAlternativeCards = deck.alternatives || [];
+          renderAlternativeCards();
+        }
+      }
     }
   }
 
@@ -1300,6 +1472,7 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
     for (let seat = 1; seat <= podSize; seat++) {
       const playerName = document.getElementById(`seatPlayer_${seat}`).value;
       const cmdId = document.getElementById(`seatCmd_${seat}`).value;
+      const alternativeId = document.getElementById(`seatPlayedCommander_${seat}`).value;
       if (!playerName) return showToast(`Select a player for Seat ${seat}.`, true);
       if (!cmdId) return showToast(`Select a commander for Seat ${seat}.`, true);
       if (usedCmdIds.has(cmdId)) return showToast("Same deck selected twice.", true);
@@ -1307,6 +1480,7 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
 
       participants.push({
         commander_id: parseInt(cmdId, 10),
+        played_alternative_id: alternativeId ? parseInt(alternativeId, 10) : null,
         seat_order: seat,
         is_winner: seat === winningSeat
       });
@@ -1374,6 +1548,17 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
       </tr>
     `).join("") || `<tr><td colspan="3" style="color:var(--muted);">No commanders meet minimum games.</td></tr>`;
 
+    document.getElementById("actualCommanderStatsBody").innerHTML = statsData.actual_commander_stats.map(c => `
+      <tr>
+        <td>${c.deck_name}</td>
+        <td>${c.owner}</td>
+        <td>${c.actual_commander}</td>
+        <td>${c.games_played}</td>
+        <td>${c.wins}</td>
+        <td><strong>${c.winrate}%</strong></td>
+      </tr>
+    `).join("") || `<tr><td colspan="6" style="color:var(--muted);">No games in this period.</td></tr>`;
+
     document.getElementById("seatStatsBody").innerHTML = statsData.seat_stats.map(s => `
       <tr>
         <td>Seat ${s.seat_order}</td>
@@ -1399,7 +1584,10 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
 
     document.getElementById("recentGamesList").innerHTML = statsData.recent_games.map(g => {
       const playersHtml = g.participants.map(p => {
-        const cmd = p.commander_2 ? `${p.commander_1} & ${p.commander_2}` : p.commander_1;
+        const deckName = p.commander_2 ? `${p.commander_1} & ${p.commander_2}` : p.commander_1;
+        const cmd = p.is_alternative
+          ? `${deckName} <span style="color:var(--gold-bright);">(played ${p.played_commander})</span>`
+          : deckName;
         return `<div style="font-size:0.96rem; ${p.is_winner ? 'color:var(--success); font-weight:700;' : 'color:var(--muted);'}">
           #${p.seat_order} ${cmd} (${p.owner}) ${p.is_winner ? '🏆' : ''}
         </div>`;
@@ -1520,6 +1708,16 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
       </tr>
     `).join("");
 
+    const actualCommandersHtml = p.actual_commanders.map(c => `
+      <tr>
+        <td>${c.deck_name}</td>
+        <td>${c.actual_commander}</td>
+        <td>${c.games_played}</td>
+        <td>${c.wins}</td>
+        <td><strong>${c.winrate}%</strong></td>
+      </tr>
+    `).join("");
+
     container.innerHTML = `
       <div class="kpi-grid">
         <div class="kpi-box">
@@ -1564,6 +1762,22 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
             </tr>
           </thead>
           <tbody>${decksHtml || `<tr><td colspan="4" style="color:var(--muted);">Geen decks gevonden.</td></tr>`}</tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Actual Commander Stats by Deck</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Deck</th>
+              <th>Commander Played</th>
+              <th>Games</th>
+              <th>Wins</th>
+              <th>Winrate</th>
+            </tr>
+          </thead>
+          <tbody>${actualCommandersHtml || `<tr><td colspan="5" style="color:var(--muted);">No games in this period.</td></tr>`}</tbody>
         </table>
       </div>
     `;

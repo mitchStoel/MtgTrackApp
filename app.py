@@ -54,6 +54,11 @@ def run_migrations(conn):
         cur.execute("ALTER TABLE game_participants ADD COLUMN seat_order INTEGER DEFAULT 1")
     if "is_winner" not in part_cols:
         cur.execute("ALTER TABLE game_participants ADD COLUMN is_winner INTEGER DEFAULT 0")
+    if "played_alternative_id" not in part_cols:
+        cur.execute(
+            "ALTER TABLE game_participants ADD COLUMN played_alternative_id INTEGER "
+            "REFERENCES commander_alternatives(id)"
+        )
 
     conn.commit()
 
@@ -94,6 +99,19 @@ def init_db():
     """)
 
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS commander_alternatives (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            commander_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            scryfall_id TEXT NOT NULL,
+            color_identity TEXT NOT NULL DEFAULT '',
+            UNIQUE (commander_id, name COLLATE NOCASE),
+            UNIQUE (commander_id, scryfall_id),
+            FOREIGN KEY (commander_id) REFERENCES commanders(id) ON DELETE CASCADE
+        )
+    """)
+
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS win_conditions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE
@@ -127,8 +145,10 @@ def init_db():
             commander_id INTEGER NOT NULL,
             seat_order INTEGER NOT NULL,
             is_winner INTEGER NOT NULL DEFAULT 0,
+            played_alternative_id INTEGER,
             FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
-            FOREIGN KEY (commander_id) REFERENCES commanders(id)
+            FOREIGN KEY (commander_id) REFERENCES commanders(id),
+            FOREIGN KEY (played_alternative_id) REFERENCES commander_alternatives(id)
         )
     """)
 
@@ -173,6 +193,120 @@ def _commander_combination_exists(conn, owner, cmd1, cmd2, exclude_id=None):
         query += " AND id != ?"
         params.append(exclude_id)
     return conn.execute(query + " LIMIT 1", params).fetchone() is not None
+
+
+class CommanderAlternativeError(ValueError):
+    def __init__(self, message, status_code=400):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _sync_commander_alternatives(conn, commander_id, alternatives, mana_cost, main_names):
+    if not isinstance(alternatives, list):
+        raise CommanderAlternativeError("Alternatieve commanders moeten een lijst zijn")
+
+    color_order = ("W", "U", "B", "R", "G")
+    deck_identity = set(extract_colors(mana_cost)) - {"C"}
+    main_names = {name.strip().casefold() for name in main_names if name.strip()}
+    existing_rows = conn.execute(
+        "SELECT id, name, scryfall_id, color_identity FROM commander_alternatives WHERE commander_id = ?",
+        (commander_id,)
+    ).fetchall()
+    existing = {row["id"]: dict(row) for row in existing_rows}
+
+    retained_ids = set()
+    additions = []
+    seen_names = set()
+    seen_scryfall_ids = set()
+
+    for alternative in alternatives:
+        if not isinstance(alternative, dict):
+            raise CommanderAlternativeError("Ongeldige alternative commander")
+
+        raw_name = alternative.get("name")
+        raw_scryfall_id = alternative.get("scryfall_id")
+        identity = alternative.get("color_identity")
+        if (
+            not isinstance(raw_name, str)
+            or not isinstance(raw_scryfall_id, str)
+            or not isinstance(identity, list)
+            or not all(isinstance(color, str) for color in identity)
+        ):
+            raise CommanderAlternativeError("Naam, Scryfall-id en kleuridentiteit zijn verplicht")
+        name = raw_name.strip()
+        scryfall_id = raw_scryfall_id.strip()
+        if not name or not scryfall_id:
+            raise CommanderAlternativeError("Naam, Scryfall-id en kleuridentiteit zijn verplicht")
+
+        identity_set = set(identity)
+        if not identity_set.issubset(set(color_order)):
+            raise CommanderAlternativeError("Ongeldige kleuridentiteit")
+        if not identity_set.issubset(deck_identity):
+            raise CommanderAlternativeError(
+                f"{name} past niet binnen de kleuridentiteit van dit deck"
+            )
+
+        normalized_name = name.casefold()
+        normalized_scryfall_id = scryfall_id.casefold()
+        if normalized_name in main_names:
+            raise CommanderAlternativeError(
+                f"{name} is al de hoofdcommander van dit deck"
+            )
+        if normalized_name in seen_names or normalized_scryfall_id in seen_scryfall_ids:
+            raise CommanderAlternativeError(f"{name} staat al bij de alternatieven")
+        seen_names.add(normalized_name)
+        seen_scryfall_ids.add(normalized_scryfall_id)
+
+        color_identity = "".join(color for color in color_order if color in identity_set)
+        alternative_id = alternative.get("id")
+        if alternative_id is None:
+            additions.append((name, scryfall_id, color_identity))
+            continue
+
+        try:
+            alternative_id = int(alternative_id)
+        except (TypeError, ValueError):
+            raise CommanderAlternativeError("Ongeldig alternative commander-id")
+
+        stored = existing.get(alternative_id)
+        if not stored:
+            raise CommanderAlternativeError("Alternative commander hoort niet bij dit deck")
+        if (
+            stored["name"] != name
+            or stored["scryfall_id"] != scryfall_id
+            or stored["color_identity"] != color_identity
+        ):
+            raise CommanderAlternativeError(
+                "Een opgeslagen alternative commander kan niet worden vervangen"
+            )
+        retained_ids.add(alternative_id)
+
+    for alternative_id in existing.keys() - retained_ids:
+        stored = existing[alternative_id]
+        games_count = conn.execute(
+            "SELECT COUNT(*) FROM game_participants WHERE played_alternative_id = ?",
+            (alternative_id,)
+        ).fetchone()[0]
+        if games_count:
+            raise CommanderAlternativeError(
+                f"{stored['name']} is in games gebruikt en kan daarom niet worden verwijderd",
+                409
+            )
+
+    for alternative_id in existing.keys() - retained_ids:
+        conn.execute(
+            "DELETE FROM commander_alternatives WHERE id = ?",
+            (alternative_id,)
+        )
+    for name, scryfall_id, color_identity in additions:
+        conn.execute(
+            """
+            INSERT INTO commander_alternatives
+                (commander_id, name, scryfall_id, color_identity)
+            VALUES (?, ?, ?, ?)
+            """,
+            (commander_id, name, scryfall_id, color_identity)
+        )
 
 
 def get_period_cutoff(period: str) -> str | None:
@@ -246,7 +380,16 @@ def change_password():
 def get_commanders():
     conn = get_db()
     rows = conn.execute("SELECT * FROM commanders ORDER BY id DESC").fetchall()
+    alternative_rows = conn.execute(
+        "SELECT * FROM commander_alternatives ORDER BY name COLLATE NOCASE ASC"
+    ).fetchall()
     conn.close()
+
+    alternatives_by_commander = {}
+    for row in alternative_rows:
+        alternative = dict(row)
+        alternative["color_identity"] = list(alternative["color_identity"])
+        alternatives_by_commander.setdefault(row["commander_id"], []).append(alternative)
 
     result = []
     for r in rows:
@@ -255,6 +398,7 @@ def get_commanders():
         item["power_level"] = item.get("power_level") or 3
         item["is_active"] = 1 if item.get("is_active") is None else int(item["is_active"])
         item["is_deleted"] = 1 if item.get("is_deleted") is None else int(item["is_deleted"])
+        item["alternatives"] = alternatives_by_commander.get(item["id"], [])
         result.append(item)
     return jsonify(result)
 
@@ -269,6 +413,7 @@ def create_commander():
     mana_cost = (data.get("mana_cost") or "").strip()
     power_level = int(data.get("power_level") or 3)
     is_active = 1 if data.get("is_active", True) else 0
+    alternatives = data.get("alternatives", [])
     
 
     if not owner or not cmd1:
@@ -290,6 +435,14 @@ def create_commander():
         (owner, cmd1, cmd2, mana_cost, power_level)
     )
     new_id = cur.lastrowid
+    try:
+        _sync_commander_alternatives(
+            conn, new_id, alternatives, mana_cost, [cmd1, cmd2]
+        )
+    except CommanderAlternativeError as err:
+        conn.rollback()
+        conn.close()
+        return jsonify({"error": str(err)}), err.status_code
     conn.commit()
     row = conn.execute("SELECT * FROM commanders WHERE id = ?", (new_id,)).fetchone()
     conn.close()
@@ -309,6 +462,7 @@ def update_commander(cmd_id):
     mana_cost = (data.get("mana_cost") or "").strip()
     power_level = int(data.get("power_level") or 3)
     is_active = 1 if data.get("is_active", True) else 0
+    alternatives = data.get("alternatives")
 
     if not owner or not cmd1:
         return jsonify({"error": "Owner en Commander Name zijn verplicht"}), 400
@@ -336,6 +490,15 @@ def update_commander(cmd_id):
         """,
         (owner, cmd1, cmd2, mana_cost, power_level, is_active, cmd_id)
     )
+    if "alternatives" in data:
+        try:
+            _sync_commander_alternatives(
+                conn, cmd_id, alternatives, mana_cost, [cmd1, cmd2]
+            )
+        except CommanderAlternativeError as err:
+            conn.rollback()
+            conn.close()
+            return jsonify({"error": str(err)}), err.status_code
     conn.commit()
     row = conn.execute("SELECT * FROM commanders WHERE id = ?", (cmd_id,)).fetchone()
     conn.close()
@@ -476,6 +639,11 @@ def create_game():
         return jsonify({"error": "Ongeldige spelgegevens"}), 400
 
     conn = get_db()
+    normalized_participants, error = _normalize_game_participants(conn, participants)
+    if error:
+        conn.close()
+        return jsonify({"error": error}), 400
+
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO games (turns, played_at, win_condition) VALUES (?, ?, ?)",
@@ -483,23 +651,58 @@ def create_game():
     )
     game_id = cur.lastrowid
 
-    for p in participants:
+    for p in normalized_participants:
         cur.execute(
             """
-            INSERT INTO game_participants (game_id, commander_id, seat_order, is_winner)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO game_participants
+                (game_id, commander_id, seat_order, is_winner, played_alternative_id)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 game_id,
-                int(p["commander_id"]),
-                int(p["seat_order"]),
-                1 if p.get("is_winner") else 0
+                p["commander_id"],
+                p["seat_order"],
+                p["is_winner"],
+                p["played_alternative_id"]
             )
         )
 
     conn.commit()
     conn.close()
     return jsonify({"id": game_id}), 201
+
+
+def _normalize_game_participants(conn, participants):
+    normalized = []
+    for participant in participants:
+        if not isinstance(participant, dict):
+            return None, "Ongeldige deelnemersgegevens"
+        try:
+            commander_id = int(participant["commander_id"])
+            seat_order = int(participant["seat_order"])
+            alternative_id = participant.get("played_alternative_id")
+            alternative_id = int(alternative_id) if alternative_id not in (None, "") else None
+        except (KeyError, TypeError, ValueError):
+            return None, "Ongeldige deelnemersgegevens"
+
+        if alternative_id is not None:
+            alternative = conn.execute(
+                """
+                SELECT id FROM commander_alternatives
+                WHERE id = ? AND commander_id = ?
+                """,
+                (alternative_id, commander_id)
+            ).fetchone()
+            if not alternative:
+                return None, "De alternative commander hoort niet bij het gekozen deck"
+
+        normalized.append({
+            "commander_id": commander_id,
+            "seat_order": seat_order,
+            "is_winner": 1 if participant.get("is_winner") else 0,
+            "played_alternative_id": alternative_id
+        })
+    return normalized, None
 
 
 @app.route("/api/games/<int:game_id>", methods=["PUT"])
@@ -520,6 +723,11 @@ def update_game(game_id):
         conn.close()
         return jsonify({"error": "Spel niet gevonden"}), 404
 
+    normalized_participants, error = _normalize_game_participants(conn, participants)
+    if error:
+        conn.close()
+        return jsonify({"error": error}), 400
+
     cur = conn.cursor()
     cur.execute(
         "UPDATE games SET turns = ?, played_at = ?, win_condition = ? WHERE id = ?",
@@ -527,17 +735,19 @@ def update_game(game_id):
     )
     cur.execute("DELETE FROM game_participants WHERE game_id = ?", (game_id,))
 
-    for p in participants:
+    for p in normalized_participants:
         cur.execute(
             """
-            INSERT INTO game_participants (game_id, commander_id, seat_order, is_winner)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO game_participants
+                (game_id, commander_id, seat_order, is_winner, played_alternative_id)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 game_id,
-                int(p["commander_id"]),
-                int(p["seat_order"]),
-                1 if p.get("is_winner") else 0
+                p["commander_id"],
+                p["seat_order"],
+                p["is_winner"],
+                p["played_alternative_id"]
             )
         )
 
@@ -573,6 +783,8 @@ def get_stats():
 
     cmd_rows = conn.execute("SELECT * FROM commanders").fetchall()
     cmd_map = {r["id"]: dict(r) for r in cmd_rows}
+    alternative_rows = conn.execute("SELECT * FROM commander_alternatives").fetchall()
+    alternative_map = {r["id"]: dict(r) for r in alternative_rows}
 
     game_ids = [g["id"] for g in games]
     all_participants = []
@@ -627,6 +839,7 @@ def get_stats():
 
     player_agg = {}
     cmd_agg = {}
+    actual_commander_agg = {}
     seat_agg = {s: {"seat_order": s, "games": 0, "wins": 0} for s in range(1, 5)}
     wincon_agg = {}
 
@@ -653,7 +866,8 @@ def get_stats():
             "win_turns": [],
             "wincons": {},
             "color_counts": {"W": 0, "U": 0, "B": 0, "R": 0, "G": 0, "C": 0},
-            "commanders": {}
+            "commanders": {},
+            "actual_commanders": {}
         })
         p_entry["games_played"] += 1
         if is_win:
@@ -669,6 +883,15 @@ def get_stats():
             p_entry["color_counts"][col] = p_entry["color_counts"].get(col, 0) + 1
 
         disp_name = f"{c['commander_1']} & {c['commander_2']}" if c["commander_2"] else c["commander_1"]
+        played_alternative_id = p["played_alternative_id"]
+        alternative = alternative_map.get(played_alternative_id)
+        if alternative and alternative["commander_id"] == c["id"]:
+            actual_name = alternative["name"]
+            actual_alternative_id = alternative["id"]
+        else:
+            actual_name = disp_name
+            actual_alternative_id = None
+
         c_entry = cmd_agg.setdefault(c["id"], {
             "id": c["id"],
             "display_name": disp_name,
@@ -693,6 +916,33 @@ def get_stats():
         pc_entry["games_played"] += 1
         if is_win:
             pc_entry["wins"] += 1
+
+        actual_key = actual_alternative_id or 0
+        actual_entry = p_entry["actual_commanders"].setdefault(actual_key, {
+            "deck_id": c["id"],
+            "deck_name": disp_name,
+            "actual_commander": actual_name,
+            "games_played": 0,
+            "wins": 0
+        })
+        actual_entry["games_played"] += 1
+        if is_win:
+            actual_entry["wins"] += 1
+
+        global_actual_entry = actual_commander_agg.setdefault(
+            (c["id"], actual_key),
+            {
+                "deck_id": c["id"],
+                "deck_name": disp_name,
+                "owner": owner,
+                "actual_commander": actual_name,
+                "games_played": 0,
+                "wins": 0
+            }
+        )
+        global_actual_entry["games_played"] += 1
+        if is_win:
+            global_actual_entry["wins"] += 1
 
         if seat in seat_agg:
             seat_agg[seat]["games"] += 1
@@ -719,6 +969,14 @@ def get_stats():
         for pc in p_entry["commanders"].values():
             pc_wr = round((pc["wins"] / pc["games_played"]) * 100, 1) if pc["games_played"] else 0
             p_cmds.append({**pc, "winrate": pc_wr})
+
+        actual_commanders = []
+        for actual in p_entry["actual_commanders"].values():
+            actual_wr = round((actual["wins"] / actual["games_played"]) * 100, 1)
+            actual_commanders.append({**actual, "winrate": actual_wr})
+        actual_commanders.sort(
+            key=lambda item: (-item["games_played"], -item["wins"], item["deck_name"], item["actual_commander"])
+        )
         
         id_info = owner_registered_identities.get(owner, {
             "active": set(),
@@ -738,7 +996,8 @@ def get_stats():
             "inactive_identities": sorted(id_info["inactive"] - id_info["active"]),
             "active_identity_counts": id_info["active_counts"],
             "inactive_identity_counts": id_info["inactive_counts"],
-            "commanders": p_cmds
+            "commanders": p_cmds,
+            "actual_commanders": actual_commanders
         }
 
     player_stats.sort(key=lambda x: (-x["winrate"], -x["wins"], x["owner"]))
@@ -753,6 +1012,14 @@ def get_stats():
         [c for c in all_cmds if c["games_played"] >= min_games],
         key=lambda x: (-x["winrate"], -x["wins"], -x["games_played"])
     )[:5]
+
+    actual_commander_stats = []
+    for actual in actual_commander_agg.values():
+        actual_wr = round((actual["wins"] / actual["games_played"]) * 100, 1)
+        actual_commander_stats.append({**actual, "winrate": actual_wr})
+    actual_commander_stats.sort(
+        key=lambda item: (-item["games_played"], -item["wins"], item["owner"], item["deck_name"])
+    )
 
     seat_stats = []
     for s in range(1, 5):
@@ -770,10 +1037,14 @@ def get_stats():
         enriched_parts = []
         for p in parts_by_game.get(g["id"], []):
             c = cmd_map.get(p["commander_id"], {})
+            alternative = alternative_map.get(p["played_alternative_id"])
+            is_alternative = bool(alternative and alternative["commander_id"] == p["commander_id"])
             enriched_parts.append({
                 "seat_order": p["seat_order"],
                 "commander_1": c.get("commander_1", "Unknown"),
                 "commander_2": c.get("commander_2", ""),
+                "played_commander": alternative["name"] if is_alternative else None,
+                "is_alternative": is_alternative,
                 "owner": c.get("owner", "Unknown"),
                 "is_winner": p["is_winner"]
             })
@@ -791,6 +1062,7 @@ def get_stats():
         "player_stats": player_stats,
         "top_played": top_played,
         "top_winrate": top_winrate,
+        "actual_commander_stats": actual_commander_stats,
         "seat_stats": seat_stats,
         "wincon_stats": wincon_stats,
         "recent_games": recent_games,
