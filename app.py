@@ -8,7 +8,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "edh-playgroup-secret-change-me")
 
-DB_PATH = os.environ.get("DB_PATH", "edh_tracker.db")
+DB_PATH = os.environ.get("DB_PATH", "mtg_tracker.db")
 DEFAULT_PASSWORD = os.environ.get("POD_PASSWORD", "edh1234")
 
 
@@ -17,6 +17,42 @@ def get_db():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def _get_table_columns(cur, table_name: str) -> set[str]:
+    rows = cur.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {row["name"] for row in rows}
+
+
+def run_migrations(conn):
+    cur = conn.cursor()
+
+    # 1. Migraties voor 'commanders'
+    cmd_cols = _get_table_columns(cur, "commanders")
+    if "commander_2" not in cmd_cols:
+        cur.execute("ALTER TABLE commanders ADD COLUMN commander_2 TEXT DEFAULT ''")
+    if "mana_cost" not in cmd_cols:
+        cur.execute("ALTER TABLE commanders ADD COLUMN mana_cost TEXT DEFAULT ''")
+    if "power_level" not in cmd_cols:
+        cur.execute("ALTER TABLE commanders ADD COLUMN power_level INTEGER DEFAULT 3")
+
+    # 2. Migraties voor 'games' (voor het geval een oudere DB kolommen mist)
+    game_cols = _get_table_columns(cur, "games")
+    if "turns" not in game_cols:
+        cur.execute("ALTER TABLE games ADD COLUMN turns INTEGER DEFAULT 0")
+    if "played_at" not in game_cols:
+        cur.execute("ALTER TABLE games ADD COLUMN played_at TEXT DEFAULT ''")
+    if "win_condition" not in game_cols:
+        cur.execute("ALTER TABLE games ADD COLUMN win_condition TEXT DEFAULT ''")
+
+    # 3. Migraties voor 'game_participants'
+    part_cols = _get_table_columns(cur, "game_participants")
+    if "seat_order" not in part_cols:
+        cur.execute("ALTER TABLE game_participants ADD COLUMN seat_order INTEGER DEFAULT 1")
+    if "is_winner" not in part_cols:
+        cur.execute("ALTER TABLE game_participants ADD COLUMN is_winner INTEGER DEFAULT 0")
+
+    conn.commit()
 
 
 def init_db():
@@ -86,6 +122,9 @@ def init_db():
             FOREIGN KEY (commander_id) REFERENCES commanders(id)
         )
     """)
+
+    # Voer schema-aanpassingen uit op de reeds bestaande database
+    run_migrations(conn)
 
     conn.commit()
     conn.close()
