@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/css/style.css?v=20261119-5" />
+  <link rel="stylesheet" href="/static/css/style.css?v=20261120-3" />
 </head>
 <body>
 
@@ -467,6 +467,192 @@
         onerror="this.style.opacity='0.35';"
       />
     `;
+  }
+
+  const scryfallCardCache = new Map();
+
+  function createScryfallCardTile(card, role) {
+    const tile = document.createElement("article");
+    tile.className = "color-combo-card";
+
+    const heading = document.createElement("div");
+    heading.className = "color-combo-card-heading";
+
+    const nameLink = document.createElement("a");
+    nameLink.className = "scryfall-card-link";
+    nameLink.href = scryfallSearchUrl(card.name);
+    nameLink.target = "_blank";
+    nameLink.rel = "noopener noreferrer";
+    nameLink.textContent = card.name;
+
+    const roleLabel = document.createElement("span");
+    roleLabel.className = "color-combo-card-role";
+    roleLabel.textContent = role;
+    heading.append(nameLink, roleLabel);
+
+    const imageLink = document.createElement("a");
+    imageLink.className = "color-combo-card-image-link";
+    imageLink.href = scryfallSearchUrl(card.name);
+    imageLink.target = "_blank";
+    imageLink.rel = "noopener noreferrer";
+    imageLink.hidden = true;
+
+    const image = document.createElement("img");
+    image.className = "color-combo-card-image";
+    image.alt = `${card.name} card image`;
+    image.loading = "lazy";
+    imageLink.appendChild(image);
+
+    const status = document.createElement("p");
+    status.className = "color-combo-card-status";
+    status.textContent = "Loading image from Scryfall...";
+    image.addEventListener("error", () => {
+      imageLink.hidden = true;
+      status.hidden = false;
+      status.textContent = `Scryfall image failed to load for ${card.name}.`;
+    });
+
+    tile.append(heading, imageLink, status);
+    return { tile, image, imageLink, status };
+  }
+
+  async function loadScryfallCardImage(cardName, image, imageLink, status) {
+    const cacheKey = cardName.toLowerCase();
+    let request = scryfallCardCache.get(cacheKey);
+    if (!request) {
+      const fetchRequest = fetch(`https://api.scryfall.com/cards/named?exact=${encodeURIComponent(cardName)}`, {
+        headers: { "Accept": "application/json" }
+      }).then(async response => {
+        const card = await response.json();
+        if (!response.ok) {
+          throw new Error(card.details || `Scryfall returned HTTP ${response.status}`);
+        }
+        return card;
+      });
+      request = fetchRequest.catch(error => {
+        if (scryfallCardCache.get(cacheKey) === request) {
+          scryfallCardCache.delete(cacheKey);
+        }
+        throw error;
+      });
+      scryfallCardCache.set(cacheKey, request);
+    }
+
+    try {
+      const card = await request;
+      const imageUris = card.image_uris || card.card_faces?.find(face => face.image_uris)?.image_uris;
+      const imageUrl = imageUris?.normal || imageUris?.small;
+      if (!imageUrl) {
+        throw new Error("No card image was returned.");
+      }
+
+      imageLink.href = card.scryfall_uri || scryfallSearchUrl(cardName);
+      image.src = imageUrl;
+      imageLink.hidden = false;
+      status.hidden = true;
+    } catch (error) {
+      status.hidden = false;
+      status.textContent = `Scryfall image unavailable for ${cardName}: ${error.message}`;
+    }
+  }
+
+  async function loadColorComboImages(cardTiles) {
+    for (const cardTile of cardTiles) {
+      await loadScryfallCardImage(
+        cardTile.name,
+        cardTile.image,
+        cardTile.imageLink,
+        cardTile.status
+      );
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
+  function openColorCombinationPage(owner, colorKey) {
+    const combo = ALL_32_COMBINATIONS.find(item => item.key === colorKey);
+    if (!combo) return;
+
+    const matchingDecks = commanders
+      .filter(deck =>
+        deck.owner === owner &&
+        !deck.is_deleted &&
+        getColorIdentityKey(deck.colors) === colorKey
+      )
+      .sort((a, b) => getDeckDisplayName(a).localeCompare(getDeckDisplayName(b)));
+
+    const container = document.getElementById("playerProfileContent");
+    container.replaceChildren();
+
+    const page = document.createElement("section");
+    page.className = "card color-combo-detail";
+
+    const header = document.createElement("div");
+    header.className = "color-combo-detail-header";
+
+    const backButton = document.createElement("button");
+    backButton.type = "button";
+    backButton.className = "small secondary color-combo-back";
+    backButton.textContent = "Back to player profile";
+    backButton.addEventListener("click", renderPlayerProfile);
+
+    const title = document.createElement("h2");
+    title.textContent = `${combo.name} (${combo.key}) Commanders`;
+
+    const subtitle = document.createElement("p");
+    subtitle.textContent = `${owner} · ${matchingDecks.length} registered ${matchingDecks.length === 1 ? "deck" : "decks"}`;
+
+    header.append(backButton, title, subtitle);
+    page.appendChild(header);
+
+    const cardTiles = [];
+    if (!matchingDecks.length) {
+      const empty = document.createElement("p");
+      empty.className = "color-combo-empty";
+      empty.textContent = "This player has no decks with this color identity.";
+      page.appendChild(empty);
+    }
+
+    matchingDecks.forEach(deck => {
+      const deckSection = document.createElement("section");
+      deckSection.className = "color-combo-deck";
+
+      const deckHeader = document.createElement("div");
+      deckHeader.className = "color-combo-deck-header";
+
+      const deckName = document.createElement("h3");
+      deckName.textContent = getDeckDisplayName(deck);
+      deckHeader.appendChild(deckName);
+
+      if ((deck.is_active ?? 1) === 0) {
+        const inactive = document.createElement("span");
+        inactive.className = "inactive-badge";
+        inactive.textContent = "Inactive";
+        deckHeader.appendChild(inactive);
+      }
+
+      const cardsGrid = document.createElement("div");
+      cardsGrid.className = "color-combo-cards";
+      const deckCards = [
+        { name: deck.commander_1, role: "Main commander" },
+        ...(deck.commander_2 ? [{ name: deck.commander_2, role: "Partner / Background" }] : []),
+        ...(deck.alternatives || []).map(alternative => ({
+          name: alternative.name,
+          role: "Alternative commander"
+        }))
+      ];
+
+      deckCards.forEach(card => {
+        const cardTile = createScryfallCardTile(card, card.role);
+        cardsGrid.appendChild(cardTile.tile);
+        cardTiles.push({ name: card.name, ...cardTile });
+      });
+
+      deckSection.append(deckHeader, cardsGrid);
+      page.appendChild(deckSection);
+    });
+
+    container.appendChild(page);
+    loadColorComboImages(cardTiles);
   }
 
   function renderPips(colors, size = 22) {
@@ -1174,7 +1360,30 @@ function setStatsPodFilter(podVal) {
     loadStats();
   }
 
-function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiveCounts = {}) {
+function escapeHtml(value) {
+  const entities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" };
+  return String(value ?? "").replace(/[&<>"']/g, character => entities[character]);
+}
+
+function scryfallSearchUrl(cardName) {
+  return `https://scryfall.com/search?q=${encodeURIComponent(`!"${cardName}"`)}`;
+}
+
+function renderScryfallCommanderLinks(commanderName) {
+  return String(commanderName || "").split(" & ").map(cardName => `
+    <a class="scryfall-card-link" href="${scryfallSearchUrl(cardName)}" target="_blank" rel="noopener noreferrer">
+      ${escapeHtml(cardName)}
+    </a>
+  `).join(' <span class="commander-pair-separator">&amp;</span> ');
+}
+
+function getColorIdentityKey(colors) {
+  const identity = new Set(colors || []);
+  const coloredKey = WUBRG_ORDER.filter(color => identity.has(color)).join("");
+  return coloredKey || "C";
+}
+
+function renderColorComboGrid(owner, activeIds, inactiveIds, activeCounts = {}, inactiveCounts = {}) {
   const activeSet = new Set(activeIds || []);
   const inactiveSet = new Set(inactiveIds || []);
 
@@ -1197,11 +1406,13 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
     }
 
     return `
-      <div class="combo-tile ${stateClass}" title="${combo.name} (${combo.key}) - ${statusLabel}">
-        <div class="combo-pips">${renderPips(combo.colors, 18)}</div>
-        <div class="combo-name">${combo.name}</div>
-        <div class="combo-status-tag">${statusLabel}</div>
-      </div>
+      <button type="button" class="combo-tile ${stateClass}" data-color-key="${combo.key}"
+              title="${combo.name} (${combo.key}) - ${statusLabel}"
+              aria-label="Show ${combo.name} commanders for ${escapeHtml(owner)}">
+        <span class="combo-pips">${renderPips(combo.colors, 18)}</span>
+        <span class="combo-name">${combo.name}</span>
+        <span class="combo-status-tag">${statusLabel}</span>
+      </button>
     `;
   }).join("");
 
@@ -1674,7 +1885,7 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
 
     document.getElementById("actualCommanderStatsBody").innerHTML = statsData.actual_commander_stats.map(c => `
       <tr>
-        <td>${c.actual_commander}</td>
+        <td>${renderScryfallCommanderLinks(c.actual_commander)}</td>
         <td>${c.games_played}</td>
         <td>${c.wins}</td>
         <td><strong>${c.winrate}%</strong></td>
@@ -1761,6 +1972,7 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
     }
     const p = statsData.player_profiles[owner];
     const comboGridCardHtml = renderColorComboGrid(
+      owner,
       p.active_identities,
       p.inactive_identities,
       p.active_identity_counts,
@@ -1833,7 +2045,7 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
 
     const actualCommandersHtml = p.actual_commanders.map(c => `
       <tr>
-        <td>${c.actual_commander}</td>
+        <td>${renderScryfallCommanderLinks(c.actual_commander)}</td>
         <td>${c.games_played}</td>
         <td>${c.wins}</td>
         <td><strong>${c.winrate}%</strong></td>
@@ -1903,6 +2115,10 @@ function renderColorComboGrid(activeIds, inactiveIds, activeCounts = {}, inactiv
         </table>
       </div>
     `;
+
+    container.querySelectorAll(".combo-tile").forEach(tile => {
+      tile.addEventListener("click", () => openColorCombinationPage(owner, tile.dataset.colorKey));
+    });
   }
 
   (async function init() {

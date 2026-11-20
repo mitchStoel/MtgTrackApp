@@ -1046,8 +1046,8 @@ tr.deck-inactive strong {
 }
 
 .icon-inactive {
-  width: 15px;
-  height: 15px;
+  width: 22px;
+  height: 22px;
   object-fit: contain;
 }
 
@@ -1244,11 +1244,36 @@ tr.deck-inactive strong {
 }
 
 .combo-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  margin: 0;
   border-radius: 9px;
   padding: 8px 6px;
   text-align: center;
   border: 1px solid var(--border-subtle);
   background: rgba(12, 18, 28, 0.42);
+  color: inherit;
+  font: inherit;
+  letter-spacing: normal;
+  clip-path: none;
+  box-shadow: none;
+  transition: transform 0.14s ease, filter 0.18s ease, background 0.18s ease;
+}
+
+.combo-tile:hover {
+  transform: translateY(-1px);
+  box-shadow: none;
+}
+
+.combo-tile:active {
+  transform: translateY(0);
+}
+
+.combo-tile:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
 }
 
 .combo-tile.owned {
@@ -1277,6 +1302,7 @@ tr.deck-inactive strong {
 }
 
 .combo-name {
+  display: block;
   font-family: var(--font-display);
   font-size: 0.68rem;
   font-weight: 700;
@@ -1285,7 +1311,165 @@ tr.deck-inactive strong {
 }
 
 .combo-status-tag {
+  display: block;
   font-size: 0.68rem;
   color: var(--muted);
   margin-top: 1px;
+}
+
+.scryfall-card-link {
+  color: var(--gold-bright);
+  text-decoration: none;
+}
+
+.scryfall-card-link:hover {
+  text-decoration: underline;
+}
+
+.commander-pair-separator {
+  color: var(--muted);
+}
+
+.color-combo-detail-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.color-combo-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.color-combo-detail-header,
+.color-combo-empty {
+  grid-column: 1 / -1;
+}
+
+.color-combo-detail-header h2,
+.color-combo-detail-header p {
+  margin: 0;
+}
+
+.color-combo-detail-header h2 {
+  font-size: 1.15rem;
+}
+
+.color-combo-detail-header p {
+  grid-column: 2;
+  color: var(--muted);
+}
+
+.color-combo-back {
+  width: auto;
+  margin: 0;
+  clip-path: none;
+  box-shadow: none;
+  white-space: nowrap;
+}
+
+.color-combo-deck {
+  min-width: 0;
+  margin-top: 0;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: rgba(12, 18, 28, 0.42);
+}
+
+.color-combo-deck-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.color-combo-deck-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.color-combo-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  gap: 12px;
+}
+
+.color-combo-card {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: rgba(4, 8, 14, 0.36);
+}
+
+.color-combo-card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 48px;
+  overflow-wrap: anywhere;
+}
+
+.color-combo-card-role,
+.color-combo-card-status {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.color-combo-card-image-link {
+  display: block;
+  margin-top: 8px;
+  text-align: center;
+}
+
+.color-combo-card-image-link[hidden] {
+  display: none;
+}
+
+.color-combo-card-image {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.color-combo-card-status {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.color-combo-card-status[hidden] {
+  display: none;
+}
+
+.color-combo-empty {
+  margin: 16px 0 0;
+  color: var(--muted);
+}
+
+@media (max-width: 520px) {
+  .color-combo-detail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .color-combo-detail-header {
+    grid-template-columns: 1fr;
+  }
+
+  .color-combo-detail-header p {
+    grid-column: 1;
+  }
+
+  .color-combo-back {
+    justify-self: start;
+  }
+
+  .color-combo-cards {
+    grid-template-columns: 1fr;
+  }
 }
