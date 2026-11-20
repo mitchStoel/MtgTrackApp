@@ -41,7 +41,10 @@ COPY --from=builder /opt/venv /opt/venv
 # Kopieer applicatiecode en maak de data-directory aan voor persistent storage
 COPY app.py .
 COPY templates/ ./templates/
-COPY static/ ./static/
+# Include the frontend stylesheet, icons, and ordered feature scripts.
+COPY static/css/ ./static/css/
+COPY static/icons/ ./static/icons/
+COPY static/js/ ./static/js/
 RUN mkdir -p /app/data && chown -R appuser:appgroup /app
 
 # Schakel over naar non-root gebruiker
