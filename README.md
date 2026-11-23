@@ -7,7 +7,7 @@ Een zelf-gehoste, mobielvriendelijke webapplicatie voor het bijhouden van Magic:
 - `templates/index.html` bevat de HTML-weergave.
 - `static/css/style.css` bevat de styling.
 - `static/js/state.js` en `static/js/shared-ui.js` leveren gedeelde status en weergavehulpen.
-- `static/js/decks.js`, `static/js/games.js`, `static/js/stats.js` en `static/js/auth.js` bevatten de bijbehorende features.
+- `static/js/decks.js`, `static/js/games.js`, `static/js/stats.js`, `static/js/random-deck-picker.js` en `static/js/auth.js` bevatten de bijbehorende features.
 - `static/js/bootstrap.js` start de app nadat de andere scripts geladen zijn.
 
 De scripts worden als klassieke scripts in vaste volgorde geladen, zodat bestaande inline HTML-handlers blijven werken. De Docker-image neemt de CSS, iconen en JavaScript-bestanden expliciet op; Docker Compose blijft alleen de database persistent mounten.

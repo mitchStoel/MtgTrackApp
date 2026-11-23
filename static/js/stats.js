@@ -1,5 +1,8 @@
 // Color-combination detail and Scryfall images
   const scryfallCardCache = new Map();
+  let playerColorComboHighlightMode = "off";
+  let glowingPlayerColorCombo = null;
+  let colorComboProfileOwner = null;
 
   function createScryfallCardTile(card, role) {
     const tile = document.createElement("article");
@@ -371,7 +374,16 @@ function getColorIdentityKey(colors) {
   return coloredKey || "C";
 }
 
-function renderColorComboGrid(owner, activeIds, inactiveIds, activeCounts = {}, inactiveCounts = {}) {
+function renderColorComboGrid(
+  owner,
+  activeIds,
+  inactiveIds,
+  activeCounts = {},
+  inactiveCounts = {},
+  winsByIdentity = {},
+  highlightMode = "off",
+  glowingKey = null
+) {
   const activeSet = new Set(activeIds || []);
   const inactiveSet = new Set(inactiveIds || []);
 
@@ -392,11 +404,27 @@ function renderColorComboGrid(owner, activeIds, inactiveIds, activeCounts = {}, 
       const count = inactiveCount || 1;
       statusLabel = `${count} non-actief`;
     }
+    const wins = winsByIdentity[combo.key] || 0;
+    const hasDeck = hasActive || hasInactiveOnly;
+    const isBright = hasDeck && (
+      (highlightMode === "won" && wins > 0) ||
+      (highlightMode === "neverwon" && wins === 0)
+    );
+    const isPastel = hasDeck && (
+      (highlightMode === "won" && wins === 0) ||
+      (highlightMode === "neverwon" && wins > 0)
+    );
+    const highlightClass = isBright
+      ? "combo-highlighted combo-highlight-bright"
+      : isPastel
+        ? "combo-highlighted combo-highlight-pastel"
+        : "";
+    const glowClass = isBright && combo.key === glowingKey ? "combo-glow" : "";
 
     return `
-      <button type="button" class="combo-tile ${stateClass}" data-color-key="${combo.key}"
-              title="${combo.name} (${combo.key}) - ${statusLabel}"
-              aria-label="Show ${combo.name} commanders for ${escapeHtml(owner)}">
+      <button type="button" class="combo-tile ${stateClass} ${highlightClass} ${glowClass}" data-color-key="${combo.key}"
+              title="${combo.name} (${combo.key}) - ${statusLabel} - ${wins} ${wins === 1 ? "win" : "wins"}"
+              aria-label="Show ${combo.name} commanders for ${escapeHtml(owner)}; ${wins} ${wins === 1 ? "win" : "wins"}">
         <span class="combo-pips">${renderPips(combo.colors, 18)}</span>
         <span class="combo-name">${combo.name}</span>
         <span class="combo-status-tag">${statusLabel}</span>
@@ -412,7 +440,18 @@ function renderColorComboGrid(owner, activeIds, inactiveIds, activeCounts = {}, 
           ${activeSet.size} / 32
         </span>
       </div>
-      <div class="combo-grid">${tilesHtml}</div>
+      <div class="combo-highlight-controls">
+        <div class="combo-highlight-switch" role="group" aria-label="Highlight color combinations">
+          <button type="button" class="combo-highlight-mode ${highlightMode === "won" ? "active" : ""}"
+                  data-highlight-mode="won" aria-pressed="${highlightMode === "won"}">won</button>
+          <button type="button" class="combo-highlight-mode ${highlightMode === "neverwon" ? "active" : ""}"
+                  data-highlight-mode="neverwon" aria-pressed="${highlightMode === "neverwon"}">neverwon</button>
+          <button type="button" class="combo-highlight-mode ${highlightMode === "off" ? "active" : ""}"
+                  data-highlight-mode="off" aria-pressed="${highlightMode === "off"}">off</button>
+        </div>
+        <button type="button" class="combo-glow-button">Glow</button>
+      </div>
+      <div class="combo-grid" data-highlight-mode="${highlightMode}">${tilesHtml}</div>
     </div>
   `;
 }
@@ -545,17 +584,31 @@ function renderColorComboGrid(owner, activeIds, inactiveIds, activeCounts = {}, 
   function renderPlayerProfile() {
     const owner = document.getElementById("playerProfileSelect").value;
     const container = document.getElementById("playerProfileContent");
+    if (owner !== colorComboProfileOwner) {
+      colorComboProfileOwner = owner;
+      glowingPlayerColorCombo = null;
+    }
     if (!owner || !statsData || !statsData.player_profiles[owner]) {
       container.innerHTML = `<div class="card">No player data available yet.</div>`;
       return;
     }
     const p = statsData.player_profiles[owner];
+    const colorComboWins = {};
+    p.commanders.forEach(deck => {
+      const colorKey = getColorIdentityKey(deck.colors);
+      colorComboWins[colorKey] = (colorComboWins[colorKey] || 0) + deck.wins;
+    });
     const comboGridCardHtml = renderColorComboGrid(
       owner,
       p.active_identities,
       p.inactive_identities,
       p.active_identity_counts,
-      p.inactive_identity_counts
+      p.inactive_identity_counts,
+      colorComboWins,
+      playerColorComboHighlightMode,
+      glowingPlayerColorCombo && glowingPlayerColorCombo.owner === owner
+        ? glowingPlayerColorCombo.key
+        : null
     );
 
     const colorNames = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green", C: "Colorless" };
@@ -698,5 +751,28 @@ function renderColorComboGrid(owner, activeIds, inactiveIds, activeCounts = {}, 
     container.querySelectorAll(".combo-tile").forEach(tile => {
       tile.addEventListener("click", () => openColorCombinationPage(owner, tile.dataset.colorKey));
     });
+
+    container.querySelectorAll(".combo-highlight-mode").forEach(button => {
+      button.addEventListener("click", () => {
+        const mode = button.dataset.highlightMode;
+        if (!["won", "neverwon", "off"].includes(mode) || mode === playerColorComboHighlightMode) return;
+        playerColorComboHighlightMode = mode;
+        glowingPlayerColorCombo = null;
+        renderPlayerProfile();
+      });
+    });
+
+    const glowButton = container.querySelector(".combo-glow-button");
+    const brightCombos = container.querySelectorAll(".combo-tile.combo-highlight-bright");
+    glowButton.disabled = brightCombos.length === 0;
+    glowButton.addEventListener("click", () => {
+      const currentHighlights = Array.from(container.querySelectorAll(".combo-tile.combo-highlight-bright"));
+      if (!currentHighlights.length) return;
+      const selectedTile = currentHighlights[Math.floor(Math.random() * currentHighlights.length)];
+      glowingPlayerColorCombo = { owner, key: selectedTile.dataset.colorKey };
+      renderPlayerProfile();
+    });
+
+    container.appendChild(createRandomDeckPickerCard(owner));
   }
 

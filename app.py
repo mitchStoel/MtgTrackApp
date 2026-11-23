@@ -836,6 +836,7 @@ def get_stats():
     total_games = len(games)
     avg_turns = round(sum(g["turns"] for g in games) / total_games, 1) if total_games else 0
     game_turns_map = {g["id"]: g["turns"] for g in games}
+    game_played_at_map = {g["id"]: g["played_at"] for g in games}
 
     player_agg = {}
     cmd_agg = {}
@@ -858,6 +859,7 @@ def get_stats():
         is_win = bool(p["is_winner"])
         seat = p["seat_order"]
         turns = game_turns_map.get(p["game_id"], 0)
+        played_at = game_played_at_map[p["game_id"]]
 
         p_entry = player_agg.setdefault(owner, {
             "owner": owner,
@@ -911,9 +913,12 @@ def get_stats():
             "power_level": c.get("power_level") or 3,
             "colors": colors,
             "games_played": 0,
-            "wins": 0
+            "wins": 0,
+            "last_played_at": played_at
         })
         pc_entry["games_played"] += 1
+        if played_at > pc_entry["last_played_at"]:
+            pc_entry["last_played_at"] = played_at
         if is_win:
             pc_entry["wins"] += 1
 
