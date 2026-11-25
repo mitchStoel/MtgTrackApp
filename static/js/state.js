@@ -18,7 +18,9 @@
     "#02ABA1", "#6B27B4", "#3A42A7", "#F88802"
   ];
 
-  let statsPodFilter = "all";
+  let statsPodFilter = "4";
+  let recentGamesExpanded = false;
+  let recentGamesPage = 0;
 
     const ALL_32_COMBINATIONS = [
       { key: "C", name: "Colorless", colors: ["C"] },

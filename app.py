@@ -309,15 +309,17 @@ def _sync_commander_alternatives(conn, commander_id, alternatives, mana_cost, ma
         )
 
 
-def get_period_cutoff(period: str) -> str | None:
+def get_period_bounds(period: str) -> tuple[str | None, str | None]:
     now = datetime.now()
     if period == "30d":
-        return (now - timedelta(days=30)).strftime("%Y-%m-%d")
+        return ((now - timedelta(days=30)).strftime("%Y-%m-%d"), None)
     if period == "90d":
-        return (now - timedelta(days=90)).strftime("%Y-%m-%d")
+        return ((now - timedelta(days=90)).strftime("%Y-%m-%d"), None)
     if period == "year":
-        return f"{now.year}-01-01"
-    return None
+        return (f"{now.year}-01-01", None)
+    if period == "previousYear":
+        return (f"{now.year - 1}-01-01", f"{now.year}-01-01")
+    return (None, None)
 
 
 @app.route("/")
@@ -770,13 +772,19 @@ def delete_game(game_id):
 def get_stats():
     min_games = max(1, int(request.args.get("min_games") or 1))
     period = request.args.get("period") or "all"
-    cutoff = get_period_cutoff(period)
+    start_date, end_date = get_period_bounds(period)
+    pod_size = request.args.get("pod_size") or "all"
     
     conn = get_db()
-    if cutoff:
+    if start_date and end_date:
+        games = conn.execute(
+            "SELECT * FROM games WHERE played_at >= ? AND played_at < ? ORDER BY played_at DESC, id DESC",
+            (start_date, end_date)
+        ).fetchall()
+    elif start_date:
         games = conn.execute(
             "SELECT * FROM games WHERE played_at >= ? ORDER BY played_at DESC, id DESC",
-            (cutoff,)
+            (start_date,)
         ).fetchall()
     else:
         games = conn.execute("SELECT * FROM games ORDER BY played_at DESC, id DESC").fetchall()
@@ -794,9 +802,48 @@ def get_stats():
             f"SELECT * FROM game_participants WHERE game_id IN ({placeholders}) ORDER BY seat_order ASC",
             game_ids
         ).fetchall()
+
+    quarterly_pod_filter = ""
+    quarterly_params = []
+    if pod_size in ("3", "4"):
+        quarterly_pod_filter = """
+            AND g.id IN (
+                SELECT game_id FROM game_participants
+                GROUP BY game_id HAVING COUNT(*) = ?
+            )
+        """
+        quarterly_params.append(int(pod_size))
+    quarterly_rows = conn.execute(
+        f"""
+        SELECT
+            strftime('%Y', g.played_at) AS year,
+            CAST((CAST(strftime('%m', g.played_at) AS INTEGER) - 1) / 3 AS INTEGER) + 1 AS quarter,
+            c.owner,
+            COUNT(DISTINCT g.id) AS quarter_games,
+            COUNT(*) AS games,
+            SUM(CASE WHEN gp.is_winner = 1 THEN 1 ELSE 0 END) AS wins
+        FROM games g
+        JOIN game_participants gp ON gp.game_id = g.id
+        JOIN commanders c ON c.id = gp.commander_id
+        WHERE strftime('%Y', g.played_at) IS NOT NULL
+        {quarterly_pod_filter}
+        GROUP BY 1, 2, 3
+        ORDER BY 1, 2, 3
+        """,
+        quarterly_params
+    ).fetchall()
     conn.close()
 
-    pod_size = request.args.get("pod_size") or "all"
+    quarterly_player_agg = {}
+    quarterly_game_counts = {}
+    for row in quarterly_rows:
+        quarter = f"{row['year']}-Q{row['quarter']}"
+        quarterly_game_counts[quarter] = row["quarter_games"]
+        quarterly_player_agg.setdefault(quarter, {})[row["owner"]] = {
+            "games": row["games"],
+            "wins": row["wins"]
+        }
+
     raw_parts_by_game = {}
     for p in all_participants:
         raw_parts_by_game.setdefault(p["game_id"], []).append(dict(p))
@@ -1007,6 +1054,32 @@ def get_stats():
         }
 
     player_stats.sort(key=lambda x: (-x["winrate"], -x["wins"], x["owner"]))
+    quarter_labels = sorted(quarterly_player_agg)
+    quarter_owners = sorted({
+        owner
+        for quarter_players in quarterly_player_agg.values()
+        for owner in quarter_players
+    })
+    quarterly_player_stats = {
+        "quarters": quarter_labels,
+        "total_games": [quarterly_game_counts[quarter] for quarter in quarter_labels],
+        "series": []
+    }
+    for owner in quarter_owners:
+        values = []
+        for quarter in quarter_labels:
+            quarter_player = quarterly_player_agg[quarter].get(owner)
+            if not quarter_player:
+                values.append(None)
+                continue
+            values.append({
+                **quarter_player,
+                "winrate": round(quarter_player["wins"] / quarter_player["games"] * 100, 1)
+            })
+        quarterly_player_stats["series"].append({
+            "owner": owner,
+            "values": values
+        })
 
     all_cmds = []
     for c_entry in cmd_agg.values():
@@ -1039,7 +1112,7 @@ def get_stats():
     ]
 
     recent_games = []
-    for g in games[:10]:
+    for g in games:
         enriched_parts = []
         for p in parts_by_game.get(g["id"], []):
             c = cmd_map.get(p["commander_id"], {})
@@ -1066,6 +1139,7 @@ def get_stats():
         "total_games": total_games,
         "avg_turns": avg_turns,
         "player_stats": player_stats,
+        "quarterly_player_stats": quarterly_player_stats,
         "top_played": top_played,
         "top_winrate": top_winrate,
         "actual_commander_stats": actual_commander_stats,

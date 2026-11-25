@@ -1,4 +1,5 @@
 // Color-combination detail and Scryfall images
+let actualCommanderStatsPage = 0;
   const scryfallCardCache = new Map();
   let playerColorComboHighlightMode = "off";
   let glowingPlayerColorCombo = null;
@@ -197,6 +198,16 @@
     document.getElementById("stats-player").style.display = view === "player" ? "block" : "none";
   }
 
+function getPlayerChartColorMap(additionalOwners = []) {
+  const quarterlyOwners = statsData?.quarterly_player_stats?.series?.map(player => player.owner) || [];
+  const owners = Array.from(new Set([...quarterlyOwners, ...additionalOwners]))
+    .sort((a, b) => a.localeCompare(b));
+  return new Map(owners.map((owner, index) => [
+    owner,
+    PLAYER_WIN_CHART_COLORS[index % PLAYER_WIN_CHART_COLORS.length]
+  ]));
+}
+
   function openPlayerProfile(owner) {
     const select = document.getElementById("playerProfileSelect");
     const option = Array.from(select.options).find(item => item.value === owner);
@@ -224,12 +235,7 @@
     const center = 100;
     const radius = 88;
     const totalWins = players.reduce((sum, player) => sum + player.wins, 0);
-    const playerColors = new Map(
-      players.map((player, index) => [
-        player.owner,
-        PLAYER_WIN_CHART_COLORS[index % PLAYER_WIN_CHART_COLORS.length]
-      ])
-    );
+    const playerColors = getPlayerChartColorMap(players.map(player => player.owner));
     svg.setAttribute("viewBox", "0 0 200 200");
     svg.setAttribute("role", "img");
     svg.setAttribute("aria-label", `Player share of ${totalWins} total wins`);
@@ -340,6 +346,140 @@
     container.append(pie, legend);
   }
 
+function renderPlayerQuarterlyWinrateChart(data) {
+  const container = document.getElementById("playerQuarterlyWinrateChart");
+  if (!container) return;
+  container.replaceChildren();
+
+  const quarters = data?.quarters || [];
+  const totalGames = data?.total_games || [];
+  const series = data?.series || [];
+  if (!quarters.length || !series.length) {
+    const empty = document.createElement("div");
+    empty.className = "player-quarterly-empty";
+    empty.textContent = "No quarterly winrate data for this period.";
+    container.appendChild(empty);
+    return;
+  }
+
+  const svgNamespace = "http://www.w3.org/2000/svg";
+  const chartHeight = 280;
+  const chartWidth = 760;
+  const plot = { left: 48, right: chartWidth - 16, top: 16, bottom: 232 };
+  const plotHeight = plot.bottom - plot.top;
+  const labelStep = Math.max(1, Math.ceil(quarters.length / 8));
+  const playerColors = getPlayerChartColorMap(series.map(player => player.owner));
+  const xForIndex = index => quarters.length === 1
+    ? (plot.left + plot.right) / 2
+    : plot.left + index * (plot.right - plot.left) / (quarters.length - 1);
+  const yForRate = rate => plot.bottom - (rate / 100) * plotHeight;
+  const svg = document.createElementNS(svgNamespace, "svg");
+  svg.setAttribute("viewBox", `0 0 ${chartWidth} ${chartHeight}`);
+  svg.setAttribute("width", chartWidth);
+  svg.setAttribute("height", chartHeight);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Player winrate per calendar quarter");
+
+  [0, 25, 50, 75, 100].forEach(rate => {
+    const y = yForRate(rate);
+    const gridline = document.createElementNS(svgNamespace, "line");
+    gridline.setAttribute("x1", plot.left);
+    gridline.setAttribute("x2", plot.right);
+    gridline.setAttribute("y1", y);
+    gridline.setAttribute("y2", y);
+    gridline.setAttribute("class", "player-quarterly-gridline");
+    svg.appendChild(gridline);
+
+    const label = document.createElementNS(svgNamespace, "text");
+    label.setAttribute("x", plot.left - 8);
+    label.setAttribute("y", y + 4);
+    label.setAttribute("text-anchor", "end");
+    label.textContent = `${rate}%`;
+    svg.appendChild(label);
+  });
+
+  quarters.forEach((quarter, index) => {
+    if (index % labelStep !== 0 && index !== quarters.length - 1) return;
+    const label = document.createElementNS(svgNamespace, "text");
+    label.setAttribute("x", xForIndex(index));
+    label.setAttribute("y", plot.bottom + 17);
+    label.setAttribute("text-anchor", "middle");
+    const quarterName = document.createElementNS(svgNamespace, "tspan");
+    quarterName.textContent = quarter;
+    label.appendChild(quarterName);
+    const gameCount = document.createElementNS(svgNamespace, "tspan");
+    gameCount.setAttribute("x", xForIndex(index));
+    gameCount.setAttribute("dy", "13");
+    gameCount.setAttribute("class", "player-quarterly-game-count");
+    gameCount.textContent = `${totalGames[index] || 0} games`;
+    label.appendChild(gameCount);
+    svg.appendChild(label);
+  });
+
+  const legend = document.createElement("div");
+  legend.className = "player-quarterly-legend";
+  series.forEach(player => {
+    const color = playerColors.get(player.owner);
+    const legendItem = document.createElement("div");
+    legendItem.className = "player-quarterly-legend-item";
+
+    const swatch = document.createElement("span");
+    swatch.className = "player-quarterly-legend-swatch";
+    swatch.style.backgroundColor = color;
+
+    const name = document.createElement("span");
+    name.textContent = player.owner;
+    legendItem.append(swatch, name);
+    legend.appendChild(legendItem);
+
+    const segments = [];
+    let segment = [];
+    player.values.forEach((value, index) => {
+      if (!value) {
+        if (segment.length) segments.push(segment);
+        segment = [];
+        return;
+      }
+      segment.push({ index, value, x: xForIndex(index), y: yForRate(value.winrate) });
+    });
+    if (segment.length) segments.push(segment);
+
+    segments.forEach(points => {
+      if (points.length > 1) {
+        const path = document.createElementNS(svgNamespace, "path");
+        path.setAttribute("d", points.map((point, index) =>
+          `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`
+        ).join(" "));
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", color);
+        path.setAttribute("stroke-width", "2");
+        path.setAttribute("stroke-dasharray", "1 5");
+        path.setAttribute("stroke-opacity", "0.72");
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+        svg.appendChild(path);
+      }
+
+      points.forEach(point => {
+        const circle = document.createElementNS(svgNamespace, "circle");
+        circle.setAttribute("cx", point.x);
+        circle.setAttribute("cy", point.y);
+        circle.setAttribute("r", "4");
+        circle.setAttribute("fill", color);
+        circle.setAttribute("stroke", "#101722");
+        circle.setAttribute("stroke-width", "2");
+        const title = document.createElementNS(svgNamespace, "title");
+        title.textContent = `${player.owner} · ${quarters[point.index]}: ${point.value.winrate}% (${point.value.wins} wins / ${point.value.games} games); ${totalGames[point.index] || 0} games in quarter`;
+        circle.appendChild(title);
+        svg.appendChild(circle);
+      });
+    });
+  });
+
+  svg.classList.add("player-quarterly-chart-svg");
+  container.append(svg, legend);
+}
+
 
 // Commander links and color-combination grid
 function setStatsPodFilter(podVal) {
@@ -350,6 +490,158 @@ function setStatsPodFilter(podVal) {
     });
     loadStats();
   }
+
+function setRecentGamesExpanded(expanded) {
+  recentGamesExpanded = expanded;
+  recentGamesPage = 0;
+  renderRecentGames();
+}
+
+function setRecentGamesPage(page) {
+  recentGamesPage = page;
+  renderRecentGames();
+}
+
+function renderSeatWinrateChart(seats) {
+  const container = document.getElementById("seatWinrateChart");
+  if (!container) return;
+
+  const data = Array.isArray(seats) ? seats : [];
+  container.innerHTML = `
+    <div class="seat-winrate-y-axis" aria-hidden="true">
+      <span>100%</span>
+      <span>75%</span>
+      <span>50%</span>
+      <span>25%</span>
+      <span>0%</span>
+    </div>
+    <div class="seat-winrate-bars" role="img" aria-label="Seat order winrate bar chart">
+      ${data.map(seat => `
+        <div class="seat-winrate-item" style="--seat-height:${seat.winrate}%">
+          <span class="seat-winrate-value">${seat.winrate}%</span>
+          <div class="seat-winrate-track" title="Seat ${seat.seat_order}: ${seat.winrate}% winrate, ${seat.wins} wins in ${seat.games} games">
+            <div class="seat-winrate-bar"></div>
+            <span class="seat-winrate-games">${seat.games}</span>
+          </div>
+          <span class="seat-winrate-label">Seat ${seat.seat_order}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderActualCommanderStats(commanders) {
+  const container = document.getElementById("actualCommanderStatsList");
+  if (!container) return;
+
+  const pageSize = 10;
+  const pageCount = Math.ceil(commanders.length / pageSize);
+  actualCommanderStatsPage = Math.max(0, Math.min(actualCommanderStatsPage, pageCount - 1));
+  const start = actualCommanderStatsPage * pageSize;
+  const visibleCommanders = commanders.slice(start, start + pageSize);
+
+  const rowsHtml = visibleCommanders.map(commander => `
+      <div class="actual-commander-stat-row">
+        <div class="actual-commander-stat-identity">
+          <div class="actual-commander-stat-line">
+            <span class="actual-commander-stat-name">${renderScryfallCommanderLinks(commander.actual_commander)}</span>
+            <span class="actual-commander-stat-owner">${escapeHtml(commander.owner)}</span>
+          </div>
+        </div>
+        <div class="actual-commander-stat-metric"><strong>${commander.games_played}</strong><span>Games</span></div>
+        <div class="actual-commander-stat-metric"><strong>${commander.wins}</strong><span>Wins</span></div>
+        <div class="actual-commander-stat-metric actual-commander-stat-winrate"><strong>${commander.winrate}%</strong><span>Winrate</span></div>
+      </div>
+    `).join("");
+
+  const paginationHtml = pageCount > 1 ? `
+    <div class="actual-commander-stats-pagination">
+      <span>${start + 1}-${Math.min(start + pageSize, commanders.length)} of ${commanders.length}</span>
+      <div>
+        <button type="button" class="small secondary" aria-label="Previous commander page"
+          onclick="setActualCommanderStatsPage(${actualCommanderStatsPage - 1})"
+          ${actualCommanderStatsPage === 0 ? "disabled" : ""}>&lt;</button>
+        <span>${actualCommanderStatsPage + 1} of ${pageCount}</span>
+        <button type="button" class="small secondary" aria-label="Next commander page"
+          onclick="setActualCommanderStatsPage(${actualCommanderStatsPage + 1})"
+          ${actualCommanderStatsPage >= pageCount - 1 ? "disabled" : ""}>&gt;</button>
+      </div>
+    </div>
+  ` : "";
+
+  container.innerHTML = commanders.length
+    ? `<div class="actual-commander-stats-rows">${rowsHtml}</div>${paginationHtml}`
+    : `<p class="actual-commander-stats-empty">No games in this period.</p>`;
+}
+
+function setActualCommanderStatsPage(page) {
+  actualCommanderStatsPage = page;
+  renderActualCommanderStats(statsData?.actual_commander_stats || []);
+}
+
+function renderRecentGames() {
+  const container = document.getElementById("recentGamesList");
+  if (!container) return;
+
+  const games = statsData?.recent_games || [];
+  let visibleGames = games.slice(0, 2);
+
+  if (recentGamesExpanded) {
+    const pageSize = 10;
+    const pageCount = Math.max(1, Math.ceil(games.length / pageSize));
+    recentGamesPage = Math.min(recentGamesPage, pageCount - 1);
+    visibleGames = games.slice(recentGamesPage * pageSize, (recentGamesPage + 1) * pageSize);
+  }
+
+  const gamesHtml = visibleGames.map(g => {
+    const playersHtml = g.participants.map(p => {
+      const deckName = p.commander_2 ? `${p.commander_1} & ${p.commander_2}` : p.commander_1;
+      const cmd = p.is_alternative
+        ? `${deckName} <span style="color:var(--gold-bright);">(played ${p.played_commander})</span>`
+        : deckName;
+      return `<div style="font-size:0.96rem; ${p.is_winner ? 'color:var(--success); font-weight:700;' : 'color:var(--muted);'}">
+        #${p.seat_order} ${cmd} (${p.owner}) ${p.is_winner ? '🏆' : ''}
+      </div>`;
+    }).join("");
+    return `
+      <div style="background:rgba(12, 18, 28, 0.56); border:1px solid var(--border-subtle); border-radius:10px; padding:10px; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <span style="font-size:0.9rem; color:var(--gold-bright);">${g.played_date} • Turn ${g.turns} (${g.win_condition})</span>
+          <div style="display:flex; gap:6px;">
+            <button type="button" class="small secondary" style="padding:3px 10px; font-size:0.72rem; margin:0;" onclick="startEditGame(${g.id})">Edit</button>
+            <button type="button" class="small danger" style="padding:3px 10px; font-size:0.72rem; margin:0;" onclick="deleteGame(${g.id})">Del</button>
+          </div>
+        </div>
+        ${playersHtml}
+      </div>
+    `;
+  }).join("");
+
+  let footerHtml = "";
+  if (!recentGamesExpanded) {
+    if (games.length > 2) {
+      footerHtml = `
+        <div style="display:flex; justify-content:flex-end; margin-top:4px;">
+          <button type="button" class="small secondary" onclick="setRecentGamesExpanded(true)">View all</button>
+        </div>
+      `;
+    }
+  } else {
+    const pageSize = 10;
+    const pageCount = Math.max(1, Math.ceil(games.length / pageSize));
+    footerHtml = `
+      <div style="display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-top:4px;">
+        <button type="button" class="small secondary" style="margin:0;" onclick="setRecentGamesPage(${recentGamesPage - 1})"
+          ${recentGamesPage === 0 ? "disabled" : ""}>&lt;</button>
+        <span style="font-size:0.9rem; color:var(--muted);">${recentGamesPage + 1} of ${pageCount}</span>
+        <button type="button" class="small secondary" style="margin:0;" onclick="setRecentGamesPage(${recentGamesPage + 1})"
+          ${recentGamesPage >= pageCount - 1 ? "disabled" : ""}>&gt;</button>
+      </div>
+    `;
+  }
+
+  container.innerHTML = (gamesHtml || `<span style="color:var(--muted); font-size:0.96rem;">No recent games in this period.</span>`) + footerHtml;
+}
 
 function escapeHtml(value) {
   const entities = { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" };
@@ -483,6 +775,7 @@ function renderColorComboGrid(
         if (player) openPlayerProfile(player.owner);
       });
     });
+    renderPlayerQuarterlyWinrateChart(statsData.quarterly_player_stats);
 
     document.getElementById("topPlayedBody").innerHTML = statsData.top_played.map(c => `
       <tr>
@@ -501,23 +794,10 @@ function renderColorComboGrid(
       </tr>
     `).join("") || `<tr><td colspan="3" style="color:var(--muted);">No commanders meet minimum games.</td></tr>`;
 
-    document.getElementById("actualCommanderStatsBody").innerHTML = statsData.actual_commander_stats.map(c => `
-      <tr>
-        <td>${renderScryfallCommanderLinks(c.actual_commander)}</td>
-        <td>${c.games_played}</td>
-        <td>${c.wins}</td>
-        <td><strong>${c.winrate}%</strong></td>
-      </tr>
-    `).join("") || `<tr><td colspan="4" style="color:var(--muted);">No games in this period.</td></tr>`;
+    actualCommanderStatsPage = 0;
+    renderActualCommanderStats(statsData.actual_commander_stats);
 
-    document.getElementById("seatStatsBody").innerHTML = statsData.seat_stats.map(s => `
-      <tr>
-        <td>Seat ${s.seat_order}</td>
-        <td>${s.games}</td>
-        <td>${s.wins}</td>
-        <td>${s.winrate}%</td>
-      </tr>
-    `).join("") || `<tr><td colspan="4" style="color:var(--muted);">No data for this period.</td></tr>`;
+    renderSeatWinrateChart(statsData.seat_stats);
 
     const totalG = statsData.total_games || 1;
     document.getElementById("winconBreakdown").innerHTML = statsData.wincon_stats.map(w => {
@@ -533,29 +813,7 @@ function renderColorComboGrid(
       `;
     }).join("") || `<span style="color:var(--muted); font-size:0.96rem;">No games in this period.</span>`;
 
-    document.getElementById("recentGamesList").innerHTML = statsData.recent_games.map(g => {
-      const playersHtml = g.participants.map(p => {
-        const deckName = p.commander_2 ? `${p.commander_1} & ${p.commander_2}` : p.commander_1;
-        const cmd = p.is_alternative
-          ? `${deckName} <span style="color:var(--gold-bright);">(played ${p.played_commander})</span>`
-          : deckName;
-        return `<div style="font-size:0.96rem; ${p.is_winner ? 'color:var(--success); font-weight:700;' : 'color:var(--muted);'}">
-          #${p.seat_order} ${cmd} (${p.owner}) ${p.is_winner ? '🏆' : ''}
-        </div>`;
-      }).join("");
-      return `
-        <div style="background:rgba(12, 18, 28, 0.56); border:1px solid var(--border-subtle); border-radius:10px; padding:10px; margin-bottom:8px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <span style="font-size:0.9rem; color:var(--gold-bright);">${g.played_date} • Turn ${g.turns} (${g.win_condition})</span>
-            <div style="display:flex; gap:6px;">
-              <button type="button" class="small secondary" style="padding:3px 10px; font-size:0.72rem; margin:0;" onclick="startEditGame(${g.id})">Edit</button>
-              <button type="button" class="small danger" style="padding:3px 10px; font-size:0.72rem; margin:0;" onclick="deleteGame(${g.id})">Del</button>
-            </div>
-          </div>
-          ${playersHtml}
-        </div>
-      `;
-    }).join("") || `<span style="color:var(--muted); font-size:0.96rem;">No recent games in this period.</span>`;
+    renderRecentGames();
 
     const owners = Object.keys(statsData.player_profiles);
     const select = document.getElementById("playerProfileSelect");

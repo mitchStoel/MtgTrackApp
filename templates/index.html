@@ -224,15 +224,16 @@
       <div class="stats-filter-row">
         <span class="stats-filter-label">Time Period:</span>
         <div class="pod-toggle-group">
-          <button type="button" id="podFilterBtn_all" class="active" onclick="setStatsPodFilter('all')">All Pods</button>
+          <button type="button" id="podFilterBtn_all" onclick="setStatsPodFilter('all')">All Pods</button>
           <button type="button" id="podFilterBtn_3" aria-label="Show statistics for 3-player games" onclick="setStatsPodFilter('3')">3</button>
-          <button type="button" id="podFilterBtn_4" aria-label="Show statistics for 4-player games" onclick="setStatsPodFilter('4')">4</button>
+          <button type="button" id="podFilterBtn_4" class="active" aria-label="Show statistics for 4-player games" onclick="setStatsPodFilter('4')">4</button>
         </div>
         <select id="timePeriodFilter" class="stats-time-filter" onchange="loadStats()">
           <option value="all" selected>All Time</option>
           <option value="30d">Last 30 Days</option>
           <option value="90d">Last 90 Days</option>
           <option value="year">This Year</option>
+          <option value="previousYear">Previous Year</option>
         </select>
       </div>
     </div>
@@ -270,6 +271,12 @@
           </thead>
           <tbody id="playerLeaderboardBody"></tbody>
         </table>
+      </div>
+
+      <div class="card">
+        <h2>Player Winrate by Quarter</h2>
+        <p class="player-wins-caption">Winrate per calendar quarter; total games are shown below each quarter.</p>
+        <div id="playerQuarterlyWinrateChart" class="player-quarterly-chart"></div>
       </div>
 
       <div class="card">
@@ -311,32 +318,12 @@
 
       <div class="card">
         <h2>Actual Commander Stats</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Commander Played</th>
-              <th>Games</th>
-              <th>Wins</th>
-              <th>Winrate</th>
-            </tr>
-          </thead>
-          <tbody id="actualCommanderStatsBody"></tbody>
-        </table>
+        <div id="actualCommanderStatsList" class="actual-commander-stats-list"></div>
       </div>
 
       <div class="card">
         <h2>Seat Order Winrate</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Seat</th>
-              <th>Games</th>
-              <th>Wins</th>
-              <th>Winrate</th>
-            </tr>
-          </thead>
-          <tbody id="seatStatsBody"></tbody>
-        </table>
+        <div id="seatWinrateChart" class="seat-winrate-chart"></div>
       </div>
 
       <div class="card">
@@ -388,11 +375,11 @@
 </nav>
 
 <!-- These classic scripts share state and must load before the app bootstrap. -->
-<script src="/static/js/state.js?v=20261123-2"></script>
+<script src="/static/js/state.js?v=20261125-2"></script>
 <script src="/static/js/shared-ui.js?v=20261123-2"></script>
 <script src="/static/js/decks.js?v=20261123-2"></script>
 <script src="/static/js/games.js?v=20261123-2"></script>
-<script src="/static/js/stats.js?v=20261123-6"></script>
+<script src="/static/js/stats.js?v=20261125-10"></script>
 <script src="/static/js/random-deck-picker.js?v=20261123-4"></script>
 <script src="/static/js/auth.js?v=20261123-2"></script>
 <script src="/static/js/bootstrap.js?v=20261123-2"></script>
