@@ -530,6 +530,55 @@ function renderSeatWinrateChart(seats) {
   `;
 }
 
+function getActualCommanderAverageWinrate(commanders) {
+  return commanders.length
+    ? commanders.reduce((total, commander) => total + commander.winrate, 0) / commanders.length
+    : 0;
+}
+
+function renderActualCommanderStatsChart(commanders, showOwner = false, averageWinrate = null) {
+  if (!commanders.length) {
+    return `<p class="actual-commander-stats-empty">No games in this period.</p>`;
+  }
+
+  const average = averageWinrate === null
+    ? getActualCommanderAverageWinrate(commanders)
+    : averageWinrate;
+  const axisHtml = `
+    <div class="actual-commander-stats-axis">
+      <span>Commander</span>
+      <div class="actual-commander-stats-axis-track">
+        <span class="actual-commander-axis-tick" style="left:0%;">0%</span>
+        <span class="actual-commander-axis-tick" style="left:50%;">50%</span>
+        <span class="actual-commander-axis-tick" style="left:100%;">100%</span>
+        <span class="actual-commander-average-marker" style="left:${average}%;">
+          <span>Average ${average.toFixed(1)}%</span>
+        </span>
+      </div>
+      <span class="actual-commander-stats-axis-result">Winrate</span>
+    </div>
+  `;
+  const rowsHtml = commanders.map(commander => `
+      <div class="actual-commander-stat-row" style="--average-rate:${average}%; --commander-rate:${commander.winrate}%;">
+        <div class="actual-commander-stat-identity">
+          <div class="actual-commander-stat-line">
+            <span class="actual-commander-stat-name">${renderScryfallCommanderLinks(commander.actual_commander)}</span>
+            ${showOwner ? `<span class="actual-commander-stat-owner">${escapeHtml(commander.owner)}</span>` : ""}
+            <span class="actual-commander-stat-pips">${renderPips(commander.colors, 15)}</span>
+          </div>
+        </div>
+        <div class="actual-commander-stat-bar" title="${commander.winrate}% winrate · ${commander.wins} wins in ${commander.games_played} games">
+          <span></span>
+        </div>
+        <div class="actual-commander-stat-result">
+          <strong>${commander.winrate}%</strong>
+          <span>${commander.wins}-${commander.games_played - commander.wins}</span>
+        </div>
+      </div>
+    `).join("");
+  return `${axisHtml}<div class="actual-commander-stats-rows">${rowsHtml}</div>`;
+}
+
 function renderActualCommanderStats(commanders) {
   const container = document.getElementById("actualCommanderStatsList");
   if (!container) return;
@@ -539,21 +588,7 @@ function renderActualCommanderStats(commanders) {
   actualCommanderStatsPage = Math.max(0, Math.min(actualCommanderStatsPage, pageCount - 1));
   const start = actualCommanderStatsPage * pageSize;
   const visibleCommanders = commanders.slice(start, start + pageSize);
-
-  const rowsHtml = visibleCommanders.map(commander => `
-      <div class="actual-commander-stat-row">
-        <div class="actual-commander-stat-identity">
-          <div class="actual-commander-stat-line">
-            <span class="actual-commander-stat-name">${renderScryfallCommanderLinks(commander.actual_commander)}</span>
-            <span class="actual-commander-stat-owner">${escapeHtml(commander.owner)}</span>
-          </div>
-        </div>
-        <div class="actual-commander-stat-metric"><strong>${commander.games_played}</strong><span>Games</span></div>
-        <div class="actual-commander-stat-metric"><strong>${commander.wins}</strong><span>Wins</span></div>
-        <div class="actual-commander-stat-metric actual-commander-stat-winrate"><strong>${commander.winrate}%</strong><span>Winrate</span></div>
-      </div>
-    `).join("");
-
+  const averageWinrate = getActualCommanderAverageWinrate(commanders);
   const paginationHtml = pageCount > 1 ? `
     <div class="actual-commander-stats-pagination">
       <span>${start + 1}-${Math.min(start + pageSize, commanders.length)} of ${commanders.length}</span>
@@ -570,7 +605,7 @@ function renderActualCommanderStats(commanders) {
   ` : "";
 
   container.innerHTML = commanders.length
-    ? `<div class="actual-commander-stats-rows">${rowsHtml}</div>${paginationHtml}`
+    ? `${renderActualCommanderStatsChart(visibleCommanders, true, averageWinrate)}${paginationHtml}`
     : `<p class="actual-commander-stats-empty">No games in this period.</p>`;
 }
 
@@ -933,15 +968,6 @@ function renderColorComboGrid(
       </tr>
     `).join("");
 
-    const actualCommandersHtml = p.actual_commanders.map(c => `
-      <tr>
-        <td>${renderScryfallCommanderLinks(c.actual_commander)}</td>
-        <td>${c.games_played}</td>
-        <td>${c.wins}</td>
-        <td><strong>${c.winrate}%</strong></td>
-      </tr>
-    `).join("");
-
     container.innerHTML = `
       <div class="kpi-grid">
         <div class="kpi-box">
@@ -992,17 +1018,7 @@ function renderColorComboGrid(
 
       <div class="card">
         <h2>Actual Commander Stats</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Played</th>
-              <th>Games</th>
-              <th>Wins</th>
-              <th>Winrate</th>
-            </tr>
-          </thead>
-          <tbody>${actualCommandersHtml || `<tr><td colspan="4" style="color:var(--muted);">No games in this period.</td></tr>`}</tbody>
-        </table>
+        ${renderActualCommanderStatsChart(p.actual_commanders)}
       </div>
     `;
 

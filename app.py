@@ -975,6 +975,7 @@ def get_stats():
             "deck_id": c["id"],
             "deck_name": disp_name,
             "actual_commander": actual_name,
+            "colors": colors,
             "games_played": 0,
             "wins": 0
         })
@@ -989,6 +990,7 @@ def get_stats():
                 "deck_name": disp_name,
                 "owner": owner,
                 "actual_commander": actual_name,
+                "colors": colors,
                 "games_played": 0,
                 "wins": 0
             }
@@ -1028,7 +1030,7 @@ def get_stats():
             actual_wr = round((actual["wins"] / actual["games_played"]) * 100, 1)
             actual_commanders.append({**actual, "winrate": actual_wr})
         actual_commanders.sort(
-            key=lambda item: (-item["games_played"], -item["wins"], item["deck_name"], item["actual_commander"])
+            key=lambda item: (-item["winrate"], -item["games_played"], item["deck_name"], item["actual_commander"])
         )
         
         id_info = owner_registered_identities.get(owner, {
@@ -1097,7 +1099,7 @@ def get_stats():
         actual_wr = round((actual["wins"] / actual["games_played"]) * 100, 1)
         actual_commander_stats.append({**actual, "winrate": actual_wr})
     actual_commander_stats.sort(
-        key=lambda item: (-item["games_played"], -item["wins"], item["owner"], item["deck_name"])
+        key=lambda item: (-item["winrate"], -item["games_played"], item["owner"], item["deck_name"])
     )
 
     seat_stats = []
